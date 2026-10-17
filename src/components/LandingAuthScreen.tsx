@@ -1,0 +1,287 @@
+"use client";
+
+import React, { useState } from "react";
+import {
+  signInWithGoogleFirebase,
+  loginWithEmailPassword,
+  registerWithEmailPassword,
+  sendFirebaseMagicLink,
+  ensureUserProfile,
+} from "@/lib/firebase";
+import PwaInstallPrompt from "@/components/PwaInstallPrompt";
+import {
+  Mail,
+  Lock,
+  User as UserIcon,
+  Award,
+  Chrome,
+  LogIn,
+  UserPlus,
+  ShieldCheck,
+} from "lucide-react";
+
+export default function LandingAuthScreen() {
+  const [mode, setMode] = useState<"signin" | "create" | "magic">("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [gameName, setGameName] = useState("");
+  const [levelInput, setLevelInput] = useState("1");
+  const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  const handleGoogleAuth = async () => {
+    setLoading(true);
+    setNotice(null);
+    try {
+      const res = await signInWithGoogleFirebase();
+      await ensureUserProfile(
+        res.user,
+        gameName.trim() || undefined,
+        parseInt(levelInput, 10) || 1
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Google Sign-In failed";
+      setNotice({ type: "error", text: msg });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setLoading(true);
+    setNotice(null);
+
+    try {
+      if (mode === "signin") {
+        const res = await loginWithEmailPassword(email.trim(), password);
+        await ensureUserProfile(res.user);
+      } else if (mode === "create") {
+        const res = await registerWithEmailPassword(email.trim(), password);
+        await ensureUserProfile(
+          res.user,
+          gameName.trim() || email.split("@")[0],
+          parseInt(levelInput, 10) || 1
+        );
+      } else {
+        await sendFirebaseMagicLink(email.trim());
+        setNotice({
+          type: "success",
+          text: `Passwordless sign-in link sent to ${email.trim()}. Check your inbox.`,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Authentication failed";
+      setNotice({ type: "error", text: msg });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-cartel-bg flex flex-col justify-between px-4 py-6 select-none">
+      {/* Subtle Top Bar with App Install Prompt */}
+      <div className="w-full max-w-md mx-auto flex items-center justify-between">
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <ShieldCheck className="w-4 h-4 text-amber-400" />
+          <span className="uppercase tracking-widest font-semibold text-[11px] text-amber-300/90">
+            Vinciguerra Lupo Cartel
+          </span>
+        </div>
+        <PwaInstallPrompt />
+      </div>
+
+      {/* Center Login / Create Account Card */}
+      <main className="w-full max-w-md mx-auto my-auto py-4">
+        <div className="rounded-2xl border border-amber-500/35 bg-cartel-card/95 p-6 shadow-2xl space-y-5">
+          {/* Brand Logo & Title */}
+          <div className="flex flex-col items-center text-center space-y-2.5">
+            <img
+              src="./cartel-logo.png"
+              alt="The Fifth Family — Vinciguerra Lupo Crest"
+              className="w-20 h-20 rounded-2xl border-2 border-amber-500/60 shadow-lg object-cover"
+            />
+            <div>
+              <h1 className="text-xl font-extrabold tracking-tight text-white">
+                THE FIFTH FAMILY
+              </h1>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Official Family Tax &amp; Roster Management Portal
+              </p>
+            </div>
+          </div>
+
+          {/* Mode Tabs: Sign In | Create Account */}
+          <div className="grid grid-cols-2 gap-1.5 bg-cartel-surface p-1 rounded-xl border border-cartel-border">
+            <button
+              type="button"
+              onClick={() => {
+                setMode("signin");
+                setNotice(null);
+              }}
+              className={`py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
+                mode === "signin"
+                  ? "bg-amber-500 text-slate-950 shadow"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode("create");
+                setNotice(null);
+              }}
+              className={`py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
+                mode === "create"
+                  ? "bg-amber-500 text-slate-950 shadow"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Create Account
+            </button>
+          </div>
+
+          {/* Google Sign-In Button */}
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleGoogleAuth}
+            className="w-full rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold py-2.5 px-4 text-xs flex items-center justify-center gap-2 transition shadow cursor-pointer disabled:opacity-50"
+          >
+            <Chrome className="w-4 h-4 text-blue-600" />
+            <span>Continue with Google</span>
+          </button>
+
+          <div className="relative flex py-0.5 items-center">
+            <div className="flex-grow border-t border-cartel-border" />
+            <span className="shrink mx-3 text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+              or use email
+            </span>
+            <div className="flex-grow border-t border-cartel-border" />
+          </div>
+
+          {/* Email & Password Form */}
+          <form onSubmit={handleSubmit} className="space-y-3">
+            {mode === "create" && (
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2 relative">
+                  <UserIcon className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    required
+                    value={gameName}
+                    onChange={(e) => setGameName(e.target.value)}
+                    placeholder="In-Game Name"
+                    className="w-full rounded-xl bg-cartel-bg border border-cartel-border pl-8 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+                <div className="relative">
+                  <Award className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="number"
+                    min={1}
+                    max={300}
+                    required
+                    value={levelInput}
+                    onChange={(e) => setLevelInput(e.target.value)}
+                    placeholder="Lv."
+                    title="Your Current In-Game Level"
+                    className="w-full rounded-xl bg-cartel-bg border border-cartel-border pl-8 pr-2 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="relative">
+              <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email Address"
+                className="w-full rounded-xl bg-cartel-bg border border-cartel-border pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+              />
+            </div>
+
+            {mode !== "magic" && (
+              <div className="relative">
+                <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password (6+ characters)"
+                  className="w-full rounded-xl bg-cartel-bg border border-cartel-border pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                />
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold py-2.5 px-4 text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/10 transition cursor-pointer disabled:opacity-50"
+            >
+              {mode === "signin" && (
+                <>
+                  <LogIn className="w-4 h-4" />
+                  <span>Sign In to Family Ledger</span>
+                </>
+              )}
+              {mode === "create" && (
+                <>
+                  <UserPlus className="w-4 h-4" />
+                  <span>Submit Account for Admin / Don Approval</span>
+                </>
+              )}
+              {mode === "magic" && (
+                <>
+                  <Mail className="w-4 h-4" />
+                  <span>Send Magic Sign-In Link</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          {notice && (
+            <div
+              className={`rounded-xl px-3 py-2 text-xs border ${
+                notice.type === "success"
+                  ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                  : "bg-rose-500/15 border-rose-500/40 text-rose-300"
+              }`}
+            >
+              {notice.text}
+            </div>
+          )}
+
+          <div className="text-center pt-1">
+            <button
+              type="button"
+              onClick={() =>
+                setMode(mode === "magic" ? "signin" : "magic")
+              }
+              className="text-[11px] text-slate-400 hover:text-amber-300 underline cursor-pointer"
+            >
+              {mode === "magic"
+                ? "Back to Password Sign-In"
+                : "Prefer a passwordless email link?"}
+            </button>
+          </div>
+        </div>
+      </main>
+
+      <footer className="w-full max-w-md mx-auto text-center text-[11px] text-slate-500">
+        New operative accounts require approval by the Admin or appointed Don.
+      </footer>
+    </div>
+  );
+}

@@ -5,349 +5,371 @@ import {
   useCartelStore,
   formatCartelCurrency,
   MemberRank,
+  Profile,
+  MASTER_ADMIN_EMAIL,
 } from "@/store/useCartelStore";
 import {
+  saveProfileToCloud,
+  deleteProfileFromCloud,
+  saveMetaToCloud,
+  saveTaxBracketToCloud,
+} from "@/lib/firebase";
+import {
+  UserCheck,
+  UserX,
   Code2,
   Copy,
   Check,
   CalendarSync,
   Sliders,
-  UserPlus,
-  ExternalLink,
-  ShieldAlert,
+  Crown,
   Sparkles,
-  Eye,
 } from "lucide-react";
 
-export default function AdminCommandView() {
+interface AdminCommandViewProps {
+  isMasterAdmin: boolean;
+  isAdminOrDon: boolean;
+}
+
+export default function AdminCommandView({
+  isMasterAdmin,
+  isAdminOrDon,
+}: AdminCommandViewProps) {
   const {
     profiles,
     taxLogic,
-    activePlayerId,
     activeWeekStart,
-    triggerSundayRollover,
-    updateTaxBracket,
-    addRosterMember,
+    baseTreasury,
+    welcomeHtml,
   } = useCartelStore();
 
-  const activeProfile =
-    profiles.find((p) => p.id === activePlayerId) || profiles[0];
-  const isAdmin = activeProfile.role === "Admin";
+  const pendingAccounts = profiles.filter(
+    (p) => p.approval_status === "pending"
+  );
+  const approvedMembers = profiles.filter(
+    (p) => p.approval_status === "approved"
+  );
 
-  // 1. Single-Line HTML/CSS Popup Generator State
-  const [alertTemplate, setAlertTemplate] = useState<
-    "onboarding" | "tax_reminder" | "turf_war"
-  >("onboarding");
+  // Welcome Message Custom HTML/CSS State (Editable by Master Admin oharajoshua333@gmail.com)
+  const [customWelcomeCode, setCustomWelcomeCode] = useState(welcomeHtml);
+  const [welcomeSaved, setWelcomeSaved] = useState(false);
+
+  // Single-Line HTML/CSS Alert Generator State
   const [popupTitle, setPopupTitle] = useState(
-    "Vinciguerra Lupo Cartel — Initial Application & Tax Protocol"
+    "The Fifth Family — Weekly Tax & Onboarding Notice"
   );
   const [popupBody, setPopupBody] = useState(
-    "Welcome to The Fifth Family. Operatives Lv.40+ are required to log weekly tributes into the $511M Cartel Treasury before Sunday 23:59 EST rollover."
+    "All Vinciguerra Lupo Cartel members must log weekly tributes before Sunday rollover."
   );
-  const [ctaText, setCtaText] = useState("Open Cartel Tax Tracker");
+  const [ctaText, setCtaText] = useState("Open Family Tax Portal");
   const [ctaUrl, setCtaUrl] = useState(
-    "https://vinciguerra-lupo.github.io/fifth-family-tracker/"
+    "https://3pixelpacket3.github.io/fifth-family-tracker/"
   );
   const [copiedSingleLine, setCopiedSingleLine] = useState(false);
-  const [showLivePreview, setShowLivePreview] = useState(false);
 
-  // 2. Sunday Rollover State
-  const [nextSundayDate, setNextSundayDate] = useState("2026-10-18");
-  const [rolloverNotice, setRolloverNotice] = useState<string | null>(null);
-
-  // 3. Roster Induction & Tax Logic Editor State
-  const [newGameName, setNewGameName] = useState("");
-  const [newRank, setNewRank] = useState<MemberRank>("Soldier");
-  const [newLevel, setNewLevel] = useState("50");
+  // Week & Treasury / Tax Bracket Settings
+  const [newWeekDate, setNewWeekDate] = useState(activeWeekStart);
+  const [treasuryInput, setTreasuryInput] = useState(String(baseTreasury));
   const [bracketLevel, setBracketLevel] = useState("50");
   const [bracketAmount, setBracketAmount] = useState("4000000");
-  const [bracketLabel, setBracketLabel] = useState("Made Soldier (4M)");
-  const [adminActionToast, setAdminActionToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
-  // Strictly formatted single continuous line HTML/CSS (zero \n or \r) with target='_blank' on all CTAs
-  const generateSingleLinePopupCode = (): string => {
-    const cleanTitle = popupTitle.replace(/[\r\n]+/g, " ").trim();
-    const cleanBody = popupBody.replace(/[\r\n]+/g, " ").trim();
-    const cleanCta = ctaText.replace(/[\r\n]+/g, " ").trim();
-    const cleanUrl = ctaUrl.replace(/[\r\n]+/g, "").trim();
-
-    const raw = `<div style="box-sizing:border-box;width:100%;max-width:420px;margin:0 auto;padding:18px;background:linear-gradient(145deg,#12141d 0%,#171a26 100%);border:1px solid #d4af37;border-radius:14px;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 14px 30px rgba(0,0,0,0.75);"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#d4af37;font-weight:700;">VINCIGUERRA LUPO SYNDICATE</span><span style="font-size:10px;padding:2px 8px;border-radius:99px;background:rgba(212,175,55,0.15);color:#f3e5ab;border:1px solid rgba(212,175,55,0.4);">THE FIFTH FAMILY</span></div><h3 style="margin:0 0 8px 0;font-size:16px;line-height:1.3;font-weight:800;color:#ffffff;">${cleanTitle}</h3><p style="margin:0 0 14px 0;font-size:13px;line-height:1.45;color:#cbd5e1;">${cleanBody}</p><div style="display:flex;gap:8px;align-items:center;"><a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;width:100%;text-align:center;padding:10px 14px;background:linear-gradient(90deg,#d4af37,#b48a1e);color:#090a0f;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:0.8px;text-decoration:none;border-radius:9px;">${cleanCta} &#8599;</a></div></div>`;
-
-    return raw.replace(/[\r\n]+/g, "");
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
   };
 
-  const singleLineCode = generateSingleLinePopupCode();
-
-  const applyTemplate = (tpl: "onboarding" | "tax_reminder" | "turf_war") => {
-    setAlertTemplate(tpl);
-    if (tpl === "onboarding") {
-      setPopupTitle(
-        "Vinciguerra Lupo Cartel — Initial Application & Tax Protocol"
-      );
-      setPopupBody(
-        "Welcome to The Fifth Family. Operatives Lv.40+ are required to log weekly tributes into the $511M Cartel Treasury before Sunday 23:59 EST rollover."
-      );
-      setCtaText("Complete Cartel Onboarding");
-    } else if (tpl === "tax_reminder") {
-      setPopupTitle("URGENT: Sunday Cartel Treasury Rollover in 2 Hours");
-      setPopupBody(
-        "Don Wolfie05 & Underboss VexValerius are finalizing the active week snapshot. Settle your level bracket tax now to maintain Syndicate War payout eligibility."
-      );
-      setCtaText("Log Weekly Tax Tribute");
-    } else {
-      setPopupTitle("SYNDICATE ALERT: Sector 7 Turf Defense Mobilization");
-      setPopupBody(
-        "All Made Soldiers (Lv.50+) and Capos report to the Armory. $511M Cartel Treasury war chest is unlocked for ammunition reimbursements."
-      );
-      setCtaText("Launch War Room Dossier");
-    }
+  // Approve or Reject Pending User Account
+  const handleApproveUser = async (
+    profile: Profile,
+    assignRank: MemberRank = "Soldier"
+  ) => {
+    const updated: Profile = {
+      ...profile,
+      rank: assignRank,
+      role: assignRank === "Don" ? "Admin" : "User",
+      approval_status: "approved",
+    };
+    await saveProfileToCloud(updated);
+    showToast(`Approved ${profile.game_name} as ${assignRank}.`);
   };
 
-  const handleCopyPopupCode = () => {
-    navigator.clipboard.writeText(singleLineCode);
-    setCopiedSingleLine(true);
-    setTimeout(() => setCopiedSingleLine(false), 3000);
+  const handleRejectUser = async (profile: Profile) => {
+    await deleteProfileFromCloud(profile.id);
+    showToast(`Removed pending request from ${profile.game_name}.`);
   };
 
-  const handleTriggerRollover = () => {
-    if (!nextSundayDate) return;
-    triggerSundayRollover(nextSundayDate);
-    setRolloverNotice(
-      `Sunday Rollover executed! Active week advanced to ${nextSundayDate} for all ${profiles.length} operatives.`
-    );
-    setTimeout(() => setRolloverNotice(null), 4000);
-  };
-
-  const handleAddMember = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newGameName.trim()) return;
-    const lvl = Math.max(1, parseInt(newLevel, 10) || 1);
-    addRosterMember({
-      game_name: newGameName.trim(),
-      rank: newRank,
-      level: lvl,
-      role: newRank === "Don" || newRank === "Underboss" ? "Admin" : "User",
+  // Master Admin: Appoint or Change the Family Don from existing users
+  const handleSetDon = async (memberId: string) => {
+    const target = approvedMembers.find((m) => m.id === memberId);
+    if (!target) return;
+    await saveProfileToCloud({
+      ...target,
+      rank: "Don",
+      role: "Admin",
     });
-    setAdminActionToast(
-      `Inducted ${newGameName.trim()} (Lv.${lvl} ${newRank}) into roster.`
-    );
-    setNewGameName("");
-    setTimeout(() => setAdminActionToast(null), 3500);
+    showToast(`${target.game_name} has been appointed as Family Don.`);
   };
 
-  const handleSaveBracket = (e: React.FormEvent) => {
+  // Save Custom HTML/CSS Welcome Banner
+  const handleSaveWelcomeHtml = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveMetaToCloud({ welcomeHtml: customWelcomeCode });
+    setWelcomeSaved(true);
+    setTimeout(() => setWelcomeSaved(false), 3000);
+  };
+
+  // Generate Single-Line HTML/CSS Popup (0 line breaks, target='_blank')
+  const singleLinePopupCode = `<div style="box-sizing:border-box;width:100%;max-width:420px;margin:0 auto;padding:16px;background:#12141d;border:1px solid #d4af37;border-radius:14px;color:#f8fafc;font-family:system-ui,sans-serif;"><div style="font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:#d4af37;font-weight:700;margin-bottom:6px;">THE FIFTH FAMILY • VINCIGUERRA LUPO</div><h3 style="margin:0 0 6px 0;font-size:15px;font-weight:800;color:#ffffff;">${popupTitle.replace(/[\r\n]+/g, " ").trim()}</h3><p style="margin:0 0 12px 0;font-size:12px;line-height:1.45;color:#cbd5e1;">${popupBody.replace(/[\r\n]+/g, " ").trim()}</p><a href="${ctaUrl.replace(/[\r\n]+/g, "").trim()}" target="_blank" rel="noopener noreferrer" style="display:block;width:100%;box-sizing:border-box;text-align:center;padding:9px 12px;background:#d4af37;color:#090a0f;font-weight:800;font-size:11px;text-transform:uppercase;text-decoration:none;border-radius:8px;">${ctaText.replace(/[\r\n]+/g, " ").trim()} &#8599;</a></div>`.replace(
+    /[\r\n]+/g,
+    ""
+  );
+
+  const handleSaveCycleAndTreasury = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const numericTreasury = Math.max(0, parseFloat(treasuryInput) || 0);
+    await saveMetaToCloud({
+      activeWeekStart: newWeekDate,
+      baseTreasury: numericTreasury,
+    });
+    showToast(
+      `Updated Active Week (${newWeekDate}) & Treasury (${formatCartelCurrency(
+        numericTreasury,
+        true
+      )}).`
+    );
+  };
+
+  const handleSaveBracket = async (e: React.FormEvent) => {
     e.preventDefault();
     const minLvl = Math.max(1, parseInt(bracketLevel, 10) || 1);
-    const taxAmt = Math.max(0, parseFloat(bracketAmount) || 0);
-    updateTaxBracket(minLvl, taxAmt, bracketLabel || `Lv.${minLvl}+ Bracket`);
-    setAdminActionToast(
-      `Updated Tax Logic: Lv.${minLvl}+ -> ${formatCartelCurrency(taxAmt, true)}`
+    const amt = Math.max(0, parseFloat(bracketAmount) || 0);
+    await saveTaxBracketToCloud({
+      min_level: minLvl,
+      expected_tax: amt,
+      bracket_label: `Lv ${minLvl}+ (${formatCartelCurrency(amt, true)})`,
+    });
+    showToast(
+      `Saved Tax Bracket: Lv.${minLvl}+ -> ${formatCartelCurrency(amt, true)}`
     );
-    setTimeout(() => setAdminActionToast(null), 3500);
   };
+
+  if (!isAdminOrDon) {
+    return (
+      <div className="rounded-2xl border border-cartel-border bg-cartel-card p-6 text-center space-y-2">
+        <Crown className="w-7 h-7 text-amber-400 mx-auto" />
+        <h2 className="text-sm font-bold text-white uppercase">
+          Admin &amp; Don Restricted Area
+        </h2>
+        <p className="text-xs text-slate-400">
+          Only the Master Admin ({MASTER_ADMIN_EMAIL}) or an appointed Family
+          Don can approve accounts and edit system settings.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full space-y-4">
-      {!isAdmin && (
-        <div className="rounded-xl bg-amber-500/10 border border-amber-500/40 px-3.5 py-2.5 text-xs text-amber-200 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
-            <span>
-              Viewing in preview mode. Switch active operative to{" "}
-              <strong>Wolfie05 (Don)</strong> in the header for full Admin Firestore privileges.
-            </span>
-          </div>
+      {toast && (
+        <div className="rounded-xl bg-emerald-500/15 border border-emerald-500/40 px-3.5 py-2 text-xs text-emerald-300 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 shrink-0" />
+          <span>{toast}</span>
         </div>
       )}
 
-      {/* BLOCK 1: Single-Line HTML/CSS Alert & Onboarding Popup Generator (<= 564px) */}
-      <section
-        aria-label="Single-Line HTML/CSS Popup Generator"
-        className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-amber-500/30 bg-cartel-card/95 p-4 shadow-xl space-y-3"
-      >
+      {/* BLOCK 1: Account Approval Queue & Appoint Don (<= 564px) */}
+      <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-amber-500/40 bg-cartel-card p-4 shadow-xl space-y-3">
         <div className="flex items-center justify-between border-b border-cartel-border pb-2.5">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <Code2 className="w-4 h-4 text-amber-400" />
+          <div className="flex items-center gap-2">
+            <UserCheck className="w-4 h-4 text-amber-400" />
+            <div>
               <h2 className="text-xs font-bold uppercase tracking-wider text-amber-300">
-                Admin Comms — Single-Line HTML/CSS Popup Generator
+                Account Approvals &amp; Don Appointment
               </h2>
+              <p className="text-[11px] text-slate-400">
+                New signups require review by {MASTER_ADMIN_EMAIL} or the Don
+              </p>
             </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Zero line breaks (`\n` stripped) • Enforces{" "}
-              <code className="text-amber-300">target=&apos;_blank&apos;</code> so players never lose active RPG sessions
-            </p>
           </div>
-
-          <button
-            type="button"
-            onClick={() => setShowLivePreview((v) => !v)}
-            className="rounded-xl bg-cartel-surface hover:bg-slate-800 border border-cartel-border px-2.5 py-1 text-[11px] font-semibold text-slate-200 flex items-center gap-1 cursor-pointer"
-          >
-            <Eye className="w-3.5 h-3.5 text-amber-400" />
-            <span>{showLivePreview ? "Edit Fields" : "Preview Popup"}</span>
-          </button>
+          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+            {pendingAccounts.length} Pending
+          </span>
         </div>
 
-        {/* Preset Switcher */}
-        <div className="flex items-center gap-1.5">
-          {(
-            [
-              { id: "onboarding", label: "Initial Application" },
-              { id: "tax_reminder", label: "Sunday Tax Alert" },
-              { id: "turf_war", label: "Turf War CTA" },
-            ] as const
-          ).map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => applyTemplate(preset.id)}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${
-                alertTemplate === preset.id
-                  ? "bg-amber-500/20 text-amber-300 border-amber-500/50"
-                  : "bg-cartel-surface text-slate-400 border-cartel-border hover:text-white"
-              }`}
-            >
-              {preset.label}
-            </button>
-          ))}
-        </div>
-
-        {showLivePreview ? (
-          <div className="py-1">
-            <div dangerouslySetInnerHTML={{ __html: singleLineCode }} />
+        {pendingAccounts.length === 0 ? (
+          <div className="py-3 text-xs text-slate-400 text-center bg-cartel-surface/60 rounded-xl border border-cartel-border/60">
+            No pending account requests waiting for review.
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input
-              type="text"
-              value={popupTitle}
-              onChange={(e) => setPopupTitle(e.target.value)}
-              placeholder="Alert Headline"
-              className="sm:col-span-2 rounded-xl bg-cartel-bg border border-cartel-border px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
-            />
-            <input
-              type="text"
-              value={popupBody}
-              onChange={(e) => setPopupBody(e.target.value)}
-              placeholder="Popup message body"
-              className="sm:col-span-2 rounded-xl bg-cartel-bg border border-cartel-border px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-400"
-            />
-            <input
-              type="text"
-              value={ctaText}
-              onChange={(e) => setCtaText(e.target.value)}
-              placeholder="CTA Button Label"
-              className="rounded-xl bg-cartel-bg border border-cartel-border px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
-            />
-            <input
-              type="url"
-              value={ctaUrl}
-              onChange={(e) => setCtaUrl(e.target.value)}
-              placeholder="CTA Target URL (opens in _blank)"
-              className="rounded-xl bg-cartel-bg border border-cartel-border px-3 py-1.5 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-400"
-            />
+          <div className="space-y-2">
+            {pendingAccounts.slice(0, 4).map((acct) => (
+              <div
+                key={acct.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-cartel-surface border border-amber-500/30 p-2.5 text-xs"
+              >
+                <div>
+                  <p className="font-bold text-white">
+                    {acct.game_name}{" "}
+                    <span className="text-amber-300 font-normal">
+                      (Lv.{acct.level})
+                    </span>
+                  </p>
+                  <p className="text-[11px] text-slate-400">{acct.email}</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleApproveUser(acct, "Soldier")}
+                    className="rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-2.5 py-1 text-xs cursor-pointer"
+                  >
+                    Approve Member
+                  </button>
+                  {isMasterAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => handleApproveUser(acct, "Don")}
+                      className="rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-2.5 py-1 text-xs cursor-pointer"
+                    >
+                      Approve as Don
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleRejectUser(acct)}
+                    className="p-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-pointer"
+                    title="Reject Account"
+                  >
+                    <UserX className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
-        {/* Single Continuous Line Output Box */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-[11px] text-slate-400">
-            <span>
-              Continuous 1-Line Output ({singleLineCode.length} chars, 0 line breaks)
+        {/* Master Admin: Promote any Approved User to Don */}
+        {isMasterAdmin && approvedMembers.length > 0 && (
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-cartel-border text-xs">
+            <span className="text-slate-300 font-semibold flex items-center gap-1.5">
+              <Crown className="w-3.5 h-3.5 text-amber-400" />
+              <span>Appoint Family Don:</span>
             </span>
-            <span className="text-emerald-400 font-mono flex items-center gap-1">
-              <ExternalLink className="w-3 h-3" /> target=&quot;_blank&quot; verified
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              readOnly
-              value={singleLineCode}
-              className="flex-1 rounded-xl bg-cartel-bg border border-cartel-border px-3 py-2 text-[11px] font-mono text-amber-200 select-all focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={handleCopyPopupCode}
-              className="shrink-0 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3.5 py-2 text-xs flex items-center gap-1.5 transition cursor-pointer"
+            <select
+              onChange={(e) => {
+                if (e.target.value) handleSetDon(e.target.value);
+              }}
+              defaultValue=""
+              className="rounded-xl bg-cartel-bg border border-cartel-border px-2.5 py-1 text-xs text-amber-300"
             >
-              {copiedSingleLine ? (
-                <>
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Copied 1-Line</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy HTML</span>
-                </>
-              )}
-            </button>
+              <option value="" disabled>
+                Select member to make Don...
+              </option>
+              {approvedMembers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.game_name} ({m.rank})
+                </option>
+              ))}
+            </select>
           </div>
-        </div>
+        )}
       </section>
 
-      {/* BLOCK 2: Sunday Rollover Snapshot & Dynamic Tax Logic / Roster Control (<= 564px) */}
-      <section
-        aria-label="Sunday Rollover and Tax Bracket Engine"
-        className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-cartel-border bg-cartel-card/95 p-4 shadow-xl space-y-3.5"
-      >
-        {/* Sunday Rollover Trigger */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cartel-border pb-3">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <CalendarSync className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-                Sunday Rollover Snapshot Engine
-              </h3>
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Active Cycle: <strong className="text-amber-300">{activeWeekStart}</strong> • Snapshots roster &amp; initializes new weekly obligations
-            </p>
-          </div>
-
+      {/* BLOCK 2: Custom HTML/CSS Welcome Banner Designer (Master Admin oharajoshua333@gmail.com) */}
+      <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-cartel-border bg-cartel-card p-4 shadow-xl space-y-2.5">
+        <div className="flex items-center justify-between border-b border-cartel-border pb-2">
           <div className="flex items-center gap-2">
-            <input
-              type="date"
-              value={nextSundayDate}
-              onChange={(e) => setNextSundayDate(e.target.value)}
-              className="rounded-xl bg-cartel-bg border border-cartel-border px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
-            />
-            <button
-              type="button"
-              onClick={handleTriggerRollover}
-              className="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3 py-1.5 text-xs uppercase tracking-wider transition cursor-pointer"
-            >
-              Trigger Rollover
-            </button>
+            <Code2 className="w-4 h-4 text-amber-400" />
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                Custom HTML/CSS Welcome Message Designer
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                Renders at the top of the app for all approved family members
+              </p>
+            </div>
           </div>
         </div>
 
-        {rolloverNotice && (
-          <div className="rounded-lg bg-emerald-500/15 border border-emerald-500/40 px-3 py-1.5 text-xs text-emerald-300 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 shrink-0" />
-            <span>{rolloverNotice}</span>
+        <form onSubmit={handleSaveWelcomeHtml} className="space-y-2">
+          <textarea
+            rows={3}
+            value={customWelcomeCode}
+            onChange={(e) => setCustomWelcomeCode(e.target.value)}
+            placeholder="Paste custom HTML/CSS welcome banner code here..."
+            className="w-full rounded-xl bg-cartel-bg border border-cartel-border p-2.5 text-xs font-mono text-amber-200 focus:outline-none focus:border-amber-400"
+          />
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setCustomWelcomeCode("")}
+              className="text-[11px] text-slate-400 hover:text-rose-300 underline cursor-pointer"
+            >
+              Clear Banner
+            </button>
+            <button
+              type="submit"
+              className="rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-1.5 text-xs uppercase tracking-wider cursor-pointer"
+            >
+              {welcomeSaved ? "Saved Welcome Banner!" : "Publish Welcome Code"}
+            </button>
           </div>
-        )}
+        </form>
+      </section>
 
-        {/* Two Compact Forms: Tax Bracket Logic + Induct New Roster Operative */}
+      {/* BLOCK 3: Treasury, Sunday Rollover & Single-Line Popup Code (<= 564px) */}
+      <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-cartel-border bg-cartel-card p-4 shadow-xl space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Dynamic Tax Logic Updater */}
+          {/* Active Week & Treasury Setter */}
+          <form
+            onSubmit={handleSaveCycleAndTreasury}
+            className="rounded-xl bg-cartel-surface border border-cartel-border p-3 space-y-2"
+          >
+            <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+              <CalendarSync className="w-3.5 h-3.5" />
+              <span>Week Rollover &amp; Treasury</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <label className="text-[10px] text-slate-400">Active Week</label>
+                <input
+                  type="date"
+                  value={newWeekDate}
+                  onChange={(e) => setNewWeekDate(e.target.value)}
+                  className="w-full rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-400">
+                  Treasury ($)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={treasuryInput}
+                  onChange={(e) => setTreasuryInput(e.target.value)}
+                  className="w-full rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-amber-300"
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              className="w-full rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 py-1 text-xs font-bold cursor-pointer"
+            >
+              Update Week &amp; Treasury
+            </button>
+          </form>
+
+          {/* Level Tax Bracket Setter */}
           <form
             onSubmit={handleSaveBracket}
-            className="rounded-xl bg-cartel-surface/90 border border-cartel-border p-3 space-y-2"
+            className="rounded-xl bg-cartel-surface border border-cartel-border p-3 space-y-2"
           >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1">
-                <Sliders className="w-3.5 h-3.5" />
-                <span>tax_logic Table</span>
-              </span>
-              <span className="text-[10px] text-slate-400">
-                {taxLogic.length} active brackets
-              </span>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+              <Sliders className="w-3.5 h-3.5" />
+              <span>Level Tax Brackets</span>
             </div>
-
             <div className="grid grid-cols-2 gap-1.5">
               <div>
                 <label className="text-[10px] text-slate-400">Min Level</label>
@@ -360,112 +382,61 @@ export default function AdminCommandView() {
                 />
               </div>
               <div>
-                <label className="text-[10px] text-slate-400">
-                  Expected Tax ($)
-                </label>
+                <label className="text-[10px] text-slate-400">Tax ($)</label>
                 <input
                   type="number"
                   min={0}
-                  step="500000"
+                  step="any"
                   value={bracketAmount}
                   onChange={(e) => setBracketAmount(e.target.value)}
                   className="w-full rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-amber-300"
                 />
               </div>
             </div>
-
-            <div className="flex gap-1.5">
-              <input
-                type="text"
-                value={bracketLabel}
-                onChange={(e) => setBracketLabel(e.target.value)}
-                placeholder="Tier Label"
-                className="flex-1 rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-slate-200"
-              />
-              <button
-                type="submit"
-                className="rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1 text-xs font-bold cursor-pointer"
-              >
-                Save Tier
-              </button>
-            </div>
-          </form>
-
-          {/* Induct New Operative into profiles Table */}
-          <form
-            onSubmit={handleAddMember}
-            className="rounded-xl bg-cartel-surface/90 border border-cartel-border p-3 space-y-2"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1">
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>Induct Operative</span>
-              </span>
-              <span className="text-[10px] text-slate-400">
-                profiles Table
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-1.5">
-              <input
-                type="text"
-                value={newGameName}
-                onChange={(e) => setNewGameName(e.target.value)}
-                placeholder="In-Game Name"
-                className="col-span-2 rounded-lg bg-cartel-bg border border-cartel-border px-2.5 py-1 text-xs text-white"
-              />
-              <select
-                value={newRank}
-                onChange={(e) => setNewRank(e.target.value as MemberRank)}
-                className="rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-slate-200"
-              >
-                <option value="Associate">Associate</option>
-                <option value="Soldier">Soldier</option>
-                <option value="Capo">Capo</option>
-                <option value="Underboss">Underboss</option>
-                <option value="Don">Don</option>
-              </select>
-              <div className="flex gap-1.5">
-                <input
-                  type="number"
-                  min={1}
-                  max={250}
-                  value={newLevel}
-                  onChange={(e) => setNewLevel(e.target.value)}
-                  placeholder="Lv."
-                  className="w-16 rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-white"
-                />
-                <button
-                  type="submit"
-                  className="flex-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 px-2 py-1 text-xs font-bold cursor-pointer"
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-
-        {/* Compact Spec Tax Bracket Reference Strip */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px]">
-          {taxLogic.map((tier) => (
-            <div
-              key={tier.min_level}
-              className="shrink-0 rounded-lg bg-cartel-bg/90 border border-cartel-border px-2.5 py-1 flex items-center gap-1.5"
+            <button
+              type="submit"
+              className="w-full rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 py-1 text-xs font-bold cursor-pointer"
             >
-              <span className="text-slate-400">Lv.{tier.min_level}+:</span>
-              <span className="font-bold text-amber-300">
-                {formatCartelCurrency(tier.expected_tax, true)}
-              </span>
-            </div>
-          ))}
+              Save Level Bracket
+            </button>
+          </form>
         </div>
 
-        {adminActionToast && (
-          <div className="rounded-lg bg-amber-500/15 border border-amber-500/40 px-3 py-1 text-xs text-amber-200">
-            {adminActionToast}
+        {/* Single-Line HTML/CSS Alert Generator */}
+        <div className="border-t border-cartel-border pt-2.5 space-y-1.5">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="font-bold text-slate-300">
+              In-Game 1-Line HTML Popup Code (`target=&apos;_blank&apos;`)
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(singleLinePopupCode);
+                setCopiedSingleLine(true);
+                setTimeout(() => setCopiedSingleLine(false), 2500);
+              }}
+              className="text-amber-300 hover:text-amber-200 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              {copiedSingleLine ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Copied 1-Line HTML</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy 1-Line Code</span>
+                </>
+              )}
+            </button>
           </div>
-        )}
+          <input
+            type="text"
+            readOnly
+            value={singleLinePopupCode}
+            className="w-full rounded-lg bg-cartel-bg border border-cartel-border px-2.5 py-1.5 text-[11px] font-mono text-amber-200 select-all"
+          />
+        </div>
       </section>
     </div>
   );

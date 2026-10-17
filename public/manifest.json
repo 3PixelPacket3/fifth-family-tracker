@@ -1,0 +1,25 @@
+{
+  "name": "The Fifth Family — Vinciguerra Lupo Cartel",
+  "short_name": "Fifth Family",
+  "description": "Official Admin & Roster Tax Tracker for the Vinciguerra Lupo Cartel in The Fifth Family RPG.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#090a0f",
+  "theme_color": "#090a0f",
+  "icons": [
+    {
+      "src": "./cartel-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
