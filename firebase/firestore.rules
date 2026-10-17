@@ -1,0 +1,62 @@
+rules_version = '2';
+
+// =========================================================================
+// THE FIFTH FAMILY — VINCIGUERRA LUPO CARTEL TAX & TREASURY TRACKER
+// Cloud Firestore Security Rules (Document-Level Security Isolation)
+// =========================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: Check if the caller is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Helper: Check if the caller's profile document has role == 'Admin' (Don / Underboss)
+    function isCartelAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'Admin';
+    }
+
+    // 1. COLLECTION: profiles
+    // Stores core roster data: game_name, rank, level, role ('Admin' | 'User')
+    // Standard Users: Can read their own profile.
+    // Admins (Don / Underboss): Can view and manage the entire roster.
+    match /profiles/{profileId} {
+      allow read: if isSignedIn() && (request.auth.uid == profileId || isCartelAdmin());
+      allow create, update, delete: if isCartelAdmin();
+    }
+
+    // 2. COLLECTION: tax_logic
+    // Stores dynamic level-to-tax brackets (Min Level -> Expected Tax: 1->0, 40->2M, 50->4M, 60->7M, 140->86M)
+    // All authenticated cartel members can read brackets; only Admins can modify.
+    match /tax_logic/{bracketId} {
+      allow read: if isSignedIn();
+      allow write: if isCartelAdmin();
+    }
+
+    // 3. COLLECTION: weekly_contributions
+    // Stores weekly obligations and payments: player_id, week_start_date, amount_paid, status ('Pending' | 'Complete')
+    // Standard Users: Can read only their own contributions and log payments for their own player_id.
+    // Admins: Can read and update all members' weekly contributions and trigger Sunday rollovers.
+    match /weekly_contributions/{recordId} {
+      allow read: if isSignedIn() && (
+        resource.data.player_id == request.auth.uid || isCartelAdmin()
+      );
+      allow create, update: if isSignedIn() && (
+        request.resource.data.player_id == request.auth.uid || isCartelAdmin()
+      );
+      allow delete: if isCartelAdmin();
+    }
+
+    // 4. COLLECTION: cartel_treasury_meta
+    // Tracks the $511M+ Cartel Treasury balance and active Sunday rollover week_start_date
+    match /cartel_treasury_meta/{docId} {
+      allow read: if isSignedIn();
+      allow update: if isSignedIn(); // Allows treasury deposits to increment balance
+      allow create, delete: if isCartelAdmin();
+    }
+  }
+}

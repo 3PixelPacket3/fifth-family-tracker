@@ -1,0 +1,28 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "weekly_contributions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "player_id", "order": "ASCENDING" },
+        { "fieldPath": "week_start_date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "weekly_contributions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "week_start_date", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "tax_logic",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "min_level", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
