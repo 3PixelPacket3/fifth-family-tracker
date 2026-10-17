@@ -9,12 +9,14 @@ import {
   RankPermissionSet,
   Profile,
   MASTER_ADMIN_EMAIL,
+  DEFAULT_DON_EMAIL,
 } from "@/store/useCartelStore";
 import {
   saveProfileToCloud,
   deleteProfileFromCloud,
   saveMetaToCloud,
   saveTaxBracketToCloud,
+  deleteTaxBracketFromCloud,
 } from "@/lib/firebase";
 import {
   UserCheck,
@@ -26,6 +28,8 @@ import {
   Sparkles,
   Link2,
   Shield,
+  Trash2,
+  Pencil,
 } from "lucide-react";
 
 interface AdminCommandViewProps {
@@ -75,9 +79,12 @@ export default function AdminCommandView({
   const [customWelcomeCode, setCustomWelcomeCode] = useState(welcomeHtml);
   const [welcomeSaved, setWelcomeSaved] = useState(false);
 
-  // Week Rollover, Treasury & Level Tax Bracket Settings
+  // Week Rollover, Treasury & Level Tax Bracket Settings (Add / Edit / Remove)
   const [newWeekDate, setNewWeekDate] = useState(activeWeekStart);
   const [treasuryInput, setTreasuryInput] = useState(String(baseTreasury));
+  const [editingBracketMinLevel, setEditingBracketMinLevel] = useState<
+    number | null
+  >(null);
   const [bracketLevel, setBracketLevel] = useState("50");
   const [bracketAmount, setBracketAmount] = useState("4000000");
 
@@ -233,19 +240,44 @@ export default function AdminCommandView({
     );
   };
 
+  // Add or Update Level Tax Bracket
   const handleSaveBracket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!permissions.manageTaxBrackets) return;
     const minLvl = Math.max(1, parseInt(bracketLevel, 10) || 1);
     const amt = Math.max(0, parseFloat(bracketAmount) || 0);
-    await saveTaxBracketToCloud({
-      min_level: minLvl,
-      expected_tax: amt,
-      bracket_label: `Lv ${minLvl}+ (${formatCartelCurrency(amt, true)})`,
-    });
+    await saveTaxBracketToCloud(
+      {
+        min_level: minLvl,
+        expected_tax: amt,
+        bracket_label: `Lv ${minLvl}+ (${formatCartelCurrency(amt, true)})`,
+      },
+      editingBracketMinLevel ?? undefined
+    );
+    setEditingBracketMinLevel(null);
     showToast(
       `Saved Level Bracket: Lv.${minLvl}+ -> ${formatCartelCurrency(amt, true)}`
     );
+  };
+
+  // Delete Level Tax Bracket
+  const handleDeleteBracket = async (minLvl: number) => {
+    if (!permissions.manageTaxBrackets) return;
+    if (taxLogic.length <= 1) {
+      showToast("At least one base tax bracket must remain.");
+      return;
+    }
+    await deleteTaxBracketFromCloud(minLvl);
+    if (editingBracketMinLevel === minLvl) {
+      setEditingBracketMinLevel(null);
+    }
+    showToast(`Removed Lv.${minLvl}+ tax bracket.`);
+  };
+
+  const selectBracketForEdit = (minLvl: number, expectedTax: number) => {
+    setEditingBracketMinLevel(minLvl);
+    setBracketLevel(String(minLvl));
+    setBracketAmount(String(expectedTax));
   };
 
   const hasAnyCommandPermission =
@@ -291,12 +323,11 @@ export default function AdminCommandView({
                   Rank Permissions Delegation (Don &amp; App Developer)
                 </h2>
                 <p className="text-[11px] text-slate-400">
-                  Configure what powers Underboss, Capo, Soldier, and Associate have
+                  Default Don: <span className="text-amber-300">{DEFAULT_DON_EMAIL}</span> • App Dev: <span className="text-emerald-300">{MASTER_ADMIN_EMAIL}</span>
                 </p>
               </div>
             </div>
 
-            {/* Select Rank to Configure */}
             <div className="flex items-center gap-1 bg-cartel-surface p-1 rounded-xl border border-cartel-border">
               {CONFIGURABLE_RANKS.map((r) => (
                 <button
@@ -331,7 +362,7 @@ export default function AdminCommandView({
                 {
                   key: "manageTaxBrackets",
                   title: "Level Tax Brackets",
-                  desc: "Set or update automatic level-to-tax brackets",
+                  desc: "Add, edit, or remove automatic level-to-tax brackets",
                 },
                 {
                   key: "manageIndividualTax",
@@ -473,12 +504,11 @@ export default function AdminCommandView({
             </div>
           )}
 
-          {/* Appoint Don from Created Roster Members */}
           {isMasterAdmin && approvedMembers.length > 0 && (
             <div className="flex items-center justify-between gap-2 pt-2 border-t border-cartel-border text-xs">
               <span className="text-slate-300 font-semibold flex items-center gap-1.5">
                 <Crown className="w-3.5 h-3.5 text-amber-400" />
-                <span>Appoint Family Don:</span>
+                <span>Appoint Additional Family Don:</span>
               </span>
               <select
                 onChange={(e) => {
@@ -501,7 +531,7 @@ export default function AdminCommandView({
         </section>
       )}
 
-      {/* BLOCK 3: Week Rollover & Treasury + Level Tax Brackets + Member Tax Control */}
+      {/* BLOCK 3: Week Rollover & Treasury + Level Tax Brackets (Add, Edit & Remove) + Member Tax Control */}
       {(permissions.manageRolloverTreasury ||
         permissions.manageTaxBrackets ||
         permissions.manageIndividualTax) && (
@@ -554,15 +584,30 @@ export default function AdminCommandView({
                 </form>
               )}
 
-              {/* Level Tax Brackets */}
+              {/* Level Tax Brackets (Add or Edit) */}
               {permissions.manageTaxBrackets && (
                 <form
                   onSubmit={handleSaveBracket}
                   className="rounded-xl bg-cartel-surface border border-cartel-border p-3 space-y-2"
                 >
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
-                    <Sliders className="w-3.5 h-3.5" />
-                    <span>Level Tax Brackets</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5" />
+                      <span>
+                        {editingBracketMinLevel !== null
+                          ? `Editing Lv.${editingBracketMinLevel}+`
+                          : "Level Tax Brackets"}
+                      </span>
+                    </span>
+                    {editingBracketMinLevel !== null && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingBracketMinLevel(null)}
+                        className="text-[10px] text-slate-400 hover:text-white underline cursor-pointer"
+                      >
+                        Cancel Edit
+                      </button>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-1.5">
                     <div>
@@ -595,12 +640,68 @@ export default function AdminCommandView({
                     type="submit"
                     className="w-full rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 py-1 text-xs font-bold cursor-pointer"
                   >
-                    Save Level Bracket
+                    {editingBracketMinLevel !== null
+                      ? "Update Selected Bracket"
+                      : "Add / Save Level Bracket"}
                   </button>
                 </form>
               )}
             </div>
           )}
+
+          {/* Interactive Tax Brackets List: Tap to Edit or Trash Icon to Remove */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+              <span>Active Level Brackets (Tap to Edit or Remove)</span>
+              <span>{taxLogic.length} Tiers</span>
+            </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px]">
+              {taxLogic.map((tier) => {
+                const isSelected = editingBracketMinLevel === tier.min_level;
+                return (
+                  <div
+                    key={tier.min_level}
+                    className={`shrink-0 rounded-xl border px-2.5 py-1.5 flex items-center gap-2 transition ${
+                      isSelected
+                        ? "bg-amber-500/20 border-amber-400"
+                        : "bg-cartel-bg/90 border-cartel-border"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      disabled={!permissions.manageTaxBrackets}
+                      onClick={() =>
+                        selectBracketForEdit(tier.min_level, tier.expected_tax)
+                      }
+                      className="flex items-center gap-1.5 text-left cursor-pointer disabled:cursor-default"
+                      title="Click to edit this bracket"
+                    >
+                      <span className="text-slate-300 font-medium">
+                        Lv.{tier.min_level}+:
+                      </span>
+                      <span className="font-bold text-amber-300">
+                        {formatCartelCurrency(tier.expected_tax, true)}
+                      </span>
+                      {permissions.manageTaxBrackets && (
+                        <Pencil className="w-3 h-3 text-slate-400 hover:text-amber-300" />
+                      )}
+                    </button>
+
+                    {permissions.manageTaxBrackets && taxLogic.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBracket(tier.min_level)}
+                        className="text-rose-400 hover:text-rose-300 pl-1 border-l border-cartel-border cursor-pointer"
+                        title={`Remove Lv.${tier.min_level}+ bracket`}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Set Tax Rate for Individual Member */}
           {permissions.manageIndividualTax && approvedMembers.length > 0 && (
@@ -643,21 +744,6 @@ export default function AdminCommandView({
               </div>
             </form>
           )}
-
-          {/* Active Tax Bracket Strip */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px]">
-            {taxLogic.map((tier) => (
-              <div
-                key={tier.min_level}
-                className="shrink-0 rounded-lg bg-cartel-bg/90 border border-cartel-border px-2.5 py-1 flex items-center gap-1.5"
-              >
-                <span className="text-slate-400">Lv.{tier.min_level}+:</span>
-                <span className="font-bold text-amber-300">
-                  {formatCartelCurrency(tier.expected_tax, true)}
-                </span>
-              </div>
-            ))}
-          </div>
         </section>
       )}
 

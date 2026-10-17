@@ -2,7 +2,7 @@ rules_version = '2';
 
 // =========================================================================
 // THE FIFTH FAMILY — VINCIGUERRA LUPO CARTEL TAX & TREASURY TRACKER
-// Cloud Firestore Security Rules (Master Admin + Don Approval Gate)
+// Cloud Firestore Security Rules (v1.0.0 Official Release)
 // =========================================================================
 
 service cloud.firestore {
@@ -12,16 +12,23 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Master Admin is strictly oharajoshua333@gmail.com
+    // App Developer (Master Admin): oharajoshua333@gmail.com
     function isMasterAdmin() {
       return isSignedIn() &&
         request.auth.token.email != null &&
         request.auth.token.email.lower() == 'oharajoshua333@gmail.com';
     }
 
-    // Check if the caller's profile document has role == 'Admin' or rank == 'Don' and is approved
+    // Default Family Don: zpenrice@gmail.com
+    function isDefaultDon() {
+      return isSignedIn() &&
+        request.auth.token.email != null &&
+        request.auth.token.email.lower() == 'zpenrice@gmail.com';
+    }
+
+    // Check if the caller is App Developer, Default Don, or an approved Admin/Don profile
     function isApprovedAdminOrDon() {
-      return isMasterAdmin() || (
+      return isMasterAdmin() || isDefaultDon() || (
         isSignedIn() &&
         exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.approval_status == 'approved' &&
@@ -34,7 +41,7 @@ service cloud.firestore {
 
     // Check if caller is an approved cartel member
     function isApprovedMember() {
-      return isMasterAdmin() || (
+      return isMasterAdmin() || isDefaultDon() || (
         isSignedIn() &&
         exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.approval_status == 'approved'
@@ -42,33 +49,30 @@ service cloud.firestore {
     }
 
     // 1. COLLECTION: profiles
-    // Newly registered users can create their own pending profile or read their own status.
-    // Approved members can read roster profiles; only Master Admin or Don can approve/edit/remove members.
     match /profiles/{profileId} {
       allow read: if isSignedIn() && (request.auth.uid == profileId || isApprovedMember());
       allow create: if isSignedIn() && (request.auth.uid == profileId || isApprovedAdminOrDon());
-      allow update, delete: if isApprovedAdminOrDon();
+      allow update: if isApprovedMember();
+      allow delete: if isApprovedAdminOrDon() || (isSignedIn() && request.auth.uid == profileId);
     }
 
     // 2. COLLECTION: tax_logic
     match /tax_logic/{bracketId} {
       allow read: if isSignedIn();
-      allow write: if isApprovedAdminOrDon();
+      allow write: if isApprovedMember();
     }
 
     // 3. COLLECTION: weekly_contributions
     match /weekly_contributions/{recordId} {
       allow read: if isApprovedMember();
-      allow create, update: if isApprovedAdminOrDon() || (
-        isApprovedMember() && request.resource.data.player_id == request.auth.uid
-      );
+      allow create, update: if isApprovedMember();
       allow delete: if isApprovedAdminOrDon();
     }
 
-    // 4. COLLECTION: cartel_treasury_meta (Stores treasury balance, active week, and Custom HTML Welcome Banner)
+    // 4. COLLECTION: cartel_treasury_meta
     match /cartel_treasury_meta/{docId} {
       allow read: if isSignedIn();
-      allow write: if isApprovedAdminOrDon() || isApprovedMember();
+      allow write: if isApprovedMember();
     }
   }
 }

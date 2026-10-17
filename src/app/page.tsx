@@ -5,12 +5,14 @@ import {
   useCartelStore,
   formatCartelCurrency,
   getEffectivePermissions,
+  APP_VERSION,
   Profile,
 } from "@/store/useCartelStore";
 import {
   auth,
   ensureUserProfile,
   isMasterAdminEmail,
+  isDefaultDonEmail,
   logoutFirebase,
   subscribeToCartelFirestore,
   initFirebaseAnalytics,
@@ -22,12 +24,14 @@ import WeeklyDashboardView from "@/components/WeeklyDashboardView";
 import DataVaultView from "@/components/DataVaultView";
 import AdminCommandView from "@/components/AdminCommandView";
 import PwaInstallPrompt from "@/components/PwaInstallPrompt";
+import LegalSecurityModal from "@/components/LegalSecurityModal";
 import {
   LayoutDashboard,
   Database,
   ShieldCheck,
   Coins,
   LogOut,
+  Scale,
 } from "lucide-react";
 
 type ActiveTab = "dashboard" | "vault" | "admin";
@@ -44,6 +48,7 @@ export default function CartelTrackerApp() {
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
 
   useEffect(() => {
     initFirebaseAnalytics();
@@ -79,7 +84,7 @@ export default function CartelTrackerApp() {
     };
   }, []);
 
-  // Resolve user's effective profile (if linked to a created roster profile, inherit that rank/status)
+  // Resolve user's effective profile
   useEffect(() => {
     if (!firebaseUser) return;
     const directMatch = profiles.find(
@@ -116,7 +121,7 @@ export default function CartelTrackerApp() {
             className="w-16 h-16 rounded-2xl border border-amber-500/50 mx-auto animate-pulse object-cover"
           />
           <p className="text-xs uppercase tracking-widest text-amber-300 font-bold">
-            The Fifth Family
+            The Fifth Family • v{APP_VERSION}
           </p>
         </div>
       </div>
@@ -129,9 +134,14 @@ export default function CartelTrackerApp() {
   }
 
   const isMasterAdmin = isMasterAdminEmail(firebaseUser.email);
+  const isDefaultDon = isDefaultDonEmail(firebaseUser.email);
 
-  // 2. Logged In, But Account Not Approved Yet
-  if (!isMasterAdmin && userProfile.approval_status !== "approved") {
+  // 2. Logged In, But Account Not Approved Yet (Bypassed automatically for App Developer oharajoshua333@gmail.com and Default Don zpenrice@gmail.com)
+  if (
+    !isMasterAdmin &&
+    !isDefaultDon &&
+    userProfile.approval_status !== "approved"
+  ) {
     return (
       <PendingApprovalScreen
         profile={userProfile}
@@ -143,10 +153,16 @@ export default function CartelTrackerApp() {
     );
   }
 
-  // Resolve effective permissions based on user's Rank (App Developer, Don, Underboss, Capo, Soldier, Associate)
+  const effectiveRank = isMasterAdmin
+    ? "App Developer"
+    : isDefaultDon
+    ? "Don"
+    : userProfile.rank;
+
   const effectivePermissions = getEffectivePermissions(
-    isMasterAdmin ? "App Developer" : userProfile.rank,
+    effectiveRank,
     isMasterAdmin,
+    isDefaultDon,
     rankPermissions
   );
 
@@ -162,7 +178,7 @@ export default function CartelTrackerApp() {
   ).length;
 
   return (
-    <div className="min-h-screen bg-cartel-bg text-slate-100 pb-24">
+    <div className="min-h-screen bg-cartel-bg text-slate-100 pb-28">
       {/* Sticky Top Header */}
       <header className="sticky top-0 z-30 border-b border-cartel-border bg-cartel-bg/95 backdrop-blur-md">
         <div className="w-full max-w-md md:max-w-2xl mx-auto px-4 py-2.5 flex items-center justify-between gap-2">
@@ -178,7 +194,7 @@ export default function CartelTrackerApp() {
                   THE FIFTH FAMILY
                 </h1>
                 <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                  {isMasterAdmin ? "App Developer" : userProfile.rank}
+                  {effectiveRank}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-slate-400">
@@ -196,6 +212,14 @@ export default function CartelTrackerApp() {
             <PwaInstallPrompt />
             <button
               type="button"
+              onClick={() => setLegalModalOpen(true)}
+              className="p-2 rounded-xl bg-cartel-surface hover:bg-slate-800 border border-cartel-border text-slate-300 hover:text-amber-300 transition cursor-pointer"
+              title="Legal, Privacy & Security Information"
+            >
+              <Scale className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
               onClick={() => logoutFirebase()}
               className="p-2 rounded-xl bg-cartel-surface hover:bg-slate-800 border border-cartel-border text-slate-300 hover:text-rose-300 transition cursor-pointer"
               title="Sign Out"
@@ -207,7 +231,7 @@ export default function CartelTrackerApp() {
       </header>
 
       {/* Main Content Area */}
-      <main className="w-full max-w-md md:max-w-2xl mx-auto px-4 pt-4">
+      <main className="w-full max-w-md md:max-w-2xl mx-auto px-4 pt-4 space-y-4">
         {activeTab === "dashboard" && (
           <WeeklyDashboardView
             currentUserProfile={userProfile}
@@ -228,6 +252,19 @@ export default function CartelTrackerApp() {
             permissions={effectivePermissions}
           />
         )}
+
+        {/* Subtle Legal & Security Compliance Footer Strip */}
+        <footer className="pt-2 pb-4 text-center text-[11px] text-slate-500 flex flex-wrap items-center justify-center gap-2">
+          <span>v{APP_VERSION} • Unofficial RPG Companion (Fictional Currency Only)</span>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => setLegalModalOpen(true)}
+            className="text-slate-400 hover:text-amber-300 underline cursor-pointer"
+          >
+            Legal, Privacy, Security &amp; Data Deletion
+          </button>
+        </footer>
       </main>
 
       {/* Bottom Navigation Dock */}
@@ -289,6 +326,11 @@ export default function CartelTrackerApp() {
           )}
         </div>
       </nav>
+
+      <LegalSecurityModal
+        isOpen={legalModalOpen}
+        onClose={() => setLegalModalOpen(false)}
+      />
     </div>
   );
 }

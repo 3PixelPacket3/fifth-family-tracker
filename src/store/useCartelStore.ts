@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export const MASTER_ADMIN_EMAIL = "oharajoshua333@gmail.com";
+export const DEFAULT_DON_EMAIL = "zpenrice@gmail.com";
+export const APP_VERSION = "1.0.0";
 
 export type MemberRank =
   | "App Developer"
@@ -16,10 +18,10 @@ export type ApprovalStatus = "pending" | "approved" | "rejected";
 export type ContributionStatus = "Pending" | "Complete";
 
 export interface RankPermissionSet {
-  manageMembers: boolean; // Add / Edit / Remove Members, change ranks, and log payments
-  manageRolloverTreasury: boolean; // Week Rollover & Treasury: Advance active week & adjust Cartel Treasury
-  manageTaxBrackets: boolean; // Level Tax Brackets: Set or update automatic level-to-tax brackets
-  manageIndividualTax: boolean; // Set Tax Rate for Individual Member
+  manageMembers: boolean;
+  manageRolloverTreasury: boolean;
+  manageTaxBrackets: boolean;
+  manageIndividualTax: boolean;
 }
 
 export type RankPermissionsMap = Record<ConfigurableRank, RankPermissionSet>;
@@ -75,7 +77,7 @@ export interface TaxBracket {
 export interface WeeklyContribution {
   record_id: string;
   player_id: string;
-  week_start_date: string; // YYYY-MM-DD
+  week_start_date: string;
   amount_paid: number;
   status: ContributionStatus;
   receipt_note?: string;
@@ -100,13 +102,18 @@ export function getCurrentSundayISO(): string {
   return sunday.toISOString().slice(0, 10);
 }
 
-// Helper to resolve effective permissions for any member based on their rank
 export function getEffectivePermissions(
   rank: MemberRank,
   isMasterAdmin: boolean,
+  isDefaultDon: boolean,
   rankPermissions: RankPermissionsMap
 ): RankPermissionSet & { isFullCommand: boolean } {
-  if (isMasterAdmin || rank === "App Developer" || rank === "Don") {
+  if (
+    isMasterAdmin ||
+    isDefaultDon ||
+    rank === "App Developer" ||
+    rank === "Don"
+  ) {
     return {
       isFullCommand: true,
       manageMembers: true,
@@ -198,7 +205,8 @@ interface CartelState {
   updateTaxBracketLocal: (
     minLevel: number,
     expectedTax: number,
-    label: string
+    label: string,
+    previousMinLevel?: number
   ) => void;
   removeTaxBracketLocal: (minLevel: number) => void;
 }
@@ -358,21 +366,35 @@ export const useCartelStore = create<CartelState>()(
         return savedRecord;
       },
 
-      updateTaxBracketLocal: (minLevel, expectedTax, label) => {
+      updateTaxBracketLocal: (
+        minLevel,
+        expectedTax,
+        label,
+        previousMinLevel
+      ) => {
         const state = get();
-        const exists = state.taxLogic.some((b) => b.min_level === minLevel);
+        let filtered = state.taxLogic;
+        if (
+          previousMinLevel !== undefined &&
+          previousMinLevel !== minLevel
+        ) {
+          filtered = filtered.filter((b) => b.min_level !== previousMinLevel);
+        }
+        const exists = filtered.some((b) => b.min_level === minLevel);
         const nextLogic = exists
-          ? state.taxLogic.map((b) =>
-              b.min_level === minLevel
-                ? {
-                    min_level: minLevel,
-                    expected_tax: expectedTax,
-                    bracket_label: label,
-                  }
-                : b
-            )
+          ? filtered
+              .map((b) =>
+                b.min_level === minLevel
+                  ? {
+                      min_level: minLevel,
+                      expected_tax: expectedTax,
+                      bracket_label: label,
+                    }
+                  : b
+              )
+              .sort((a, b) => a.min_level - b.min_level)
           : [
-              ...state.taxLogic,
+              ...filtered,
               {
                 min_level: minLevel,
                 expected_tax: expectedTax,
@@ -384,7 +406,6 @@ export const useCartelStore = create<CartelState>()(
       },
 
       removeTaxBracketLocal: (minLevel) => {
-        if (minLevel === 1) return;
         set((state) => ({
           taxLogic: state.taxLogic.filter((b) => b.min_level !== minLevel),
         }));

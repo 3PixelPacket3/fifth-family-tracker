@@ -21,6 +21,7 @@ import {
 } from "firebase/auth";
 import {
   MASTER_ADMIN_EMAIL,
+  DEFAULT_DON_EMAIL,
   Profile,
   TaxBracket,
   WeeklyContribution,
@@ -62,7 +63,7 @@ export const initFirebaseAnalytics = async () => {
   return null;
 };
 
-// Check if email is the Master Admin (oharajoshua333@gmail.com)
+// Check if email is the App Developer (oharajoshua333@gmail.com)
 export function isMasterAdminEmail(email?: string | null): boolean {
   return (
     Boolean(email) &&
@@ -70,18 +71,27 @@ export function isMasterAdminEmail(email?: string | null): boolean {
   );
 }
 
+// Check if email is the Default Family Don (zpenrice@gmail.com)
+export function isDefaultDonEmail(email?: string | null): boolean {
+  return (
+    Boolean(email) &&
+    email!.trim().toLowerCase() === DEFAULT_DON_EMAIL.toLowerCase()
+  );
+}
+
 // Ensure a signed-in user has a profile document in Firestore & Local Store.
-// - If email === oharajoshua333@gmail.com -> automatically approved Role='Admin', Rank='Don'
-// - Otherwise -> created as approval_status='pending' so Master Admin or Don must approve before they can enter.
+// - oharajoshua333@gmail.com -> automatically approved Role='Admin', Rank='App Developer'
+// - zpenrice@gmail.com -> automatically approved Role='Admin', Rank='Don' (whether signing in via Google or Email/Password)
+// - All other accounts -> created as approval_status='pending'
 export async function ensureUserProfile(
   user: User,
   requestedGameName?: string,
   requestedLevel?: number
 ): Promise<Profile> {
   const isMaster = isMasterAdminEmail(user.email);
+  const isDefaultDon = isDefaultDonEmail(user.email);
   const store = useCartelStore.getState();
 
-  // Check local or cloud first
   let existing = store.profiles.find(
     (p) =>
       p.id === user.uid ||
@@ -95,11 +105,10 @@ export async function ensureUserProfile(
       existing = snap.data() as Profile;
     }
   } catch {
-    // Fallback to local store if Firestore rules aren't published yet
+    // Fallback to local store if offline
   }
 
   if (existing) {
-    // Upgrade master admin (App Developer) automatically if needed
     if (
       isMaster &&
       (existing.role !== "Admin" ||
@@ -116,6 +125,23 @@ export async function ensureUserProfile(
       await saveProfileToCloud(upgraded);
       return upgraded;
     }
+
+    if (
+      isDefaultDon &&
+      (existing.role !== "Admin" ||
+        existing.approval_status !== "approved" ||
+        existing.rank !== "Don")
+    ) {
+      const upgradedDon: Profile = {
+        ...existing,
+        rank: "Don",
+        role: "Admin",
+        approval_status: "approved",
+      };
+      await saveProfileToCloud(upgradedDon);
+      return upgradedDon;
+    }
+
     store.upsertProfileLocal(existing);
     return existing;
   }
@@ -131,10 +157,10 @@ export async function ensureUserProfile(
     uid: user.uid,
     email: user.email || "",
     game_name: fallbackName,
-    rank: isMaster ? "App Developer" : "Associate",
+    rank: isMaster ? "App Developer" : isDefaultDon ? "Don" : "Associate",
     level: requestedLevel && requestedLevel >= 1 ? requestedLevel : 1,
-    role: isMaster ? "Admin" : "User",
-    approval_status: isMaster ? "approved" : "pending",
+    role: isMaster || isDefaultDon ? "Admin" : "User",
+    approval_status: isMaster || isDefaultDon ? "approved" : "pending",
     is_exempt: isMaster ? true : false,
     joined_at: new Date().toISOString().slice(0, 10),
   };
@@ -143,7 +169,6 @@ export async function ensureUserProfile(
   return newProfile;
 }
 
-// Save or Update a Profile in both Local Store and Cloud Firestore
 export async function saveProfileToCloud(profile: Profile) {
   useCartelStore.getState().upsertProfileLocal(profile);
   try {
@@ -153,7 +178,6 @@ export async function saveProfileToCloud(profile: Profile) {
   }
 }
 
-// Delete a Profile from both Local Store and Cloud Firestore
 export async function deleteProfileFromCloud(profileId: string) {
   useCartelStore.getState().removeProfileLocal(profileId);
   try {
@@ -163,7 +187,6 @@ export async function deleteProfileFromCloud(profileId: string) {
   }
 }
 
-// Save a Weekly Contribution payment in both Local Store and Cloud Firestore
 export async function saveContributionToCloud(rec: WeeklyContribution) {
   try {
     await setDoc(doc(db, "weekly_contributions", rec.record_id), rec, {
@@ -174,7 +197,6 @@ export async function saveContributionToCloud(rec: WeeklyContribution) {
   }
 }
 
-// Save Metadata (Treasury balance, Active Week, Custom Welcome HTML, Rank Permissions)
 export async function saveMetaToCloud(meta: {
   baseTreasury?: number;
   activeWeekStart?: string;
@@ -209,16 +231,26 @@ export async function saveMetaToCloud(meta: {
   }
 }
 
-// Save Tax Bracket to Cloud Firestore
-export async function saveTaxBracketToCloud(tier: TaxBracket) {
+// Save or Update a Tax Bracket in both Local Store and Cloud Firestore
+export async function saveTaxBracketToCloud(
+  tier: TaxBracket,
+  previousMinLevel?: number
+) {
   useCartelStore
     .getState()
     .updateTaxBracketLocal(
       tier.min_level,
       tier.expected_tax,
-      tier.bracket_label
+      tier.bracket_label,
+      previousMinLevel
     );
   try {
+    if (
+      previousMinLevel !== undefined &&
+      previousMinLevel !== tier.min_level
+    ) {
+      await deleteDoc(doc(db, "tax_logic", `level_${previousMinLevel}`));
+    }
     await setDoc(doc(db, "tax_logic", `level_${tier.min_level}`), tier, {
       merge: true,
     });
@@ -227,7 +259,16 @@ export async function saveTaxBracketToCloud(tier: TaxBracket) {
   }
 }
 
-// Subscribe to live Cloud Firestore collections when an approved user or Admin is signed in
+// Delete a Tax Bracket from both Local Store and Cloud Firestore
+export async function deleteTaxBracketFromCloud(minLevel: number) {
+  useCartelStore.getState().removeTaxBracketLocal(minLevel);
+  try {
+    await deleteDoc(doc(db, "tax_logic", `level_${minLevel}`));
+  } catch {
+    // Local store already updated
+  }
+}
+
 export function subscribeToCartelFirestore(): () => void {
   const unsubs: Array<() => void> = [];
 
@@ -244,6 +285,20 @@ export function subscribeToCartelFirestore(): () => void {
       () => {}
     );
     unsubs.push(unsubProfiles);
+
+    const unsubTax = onSnapshot(
+      collection(db, "tax_logic"),
+      (snap) => {
+        if (!snap.empty) {
+          const list: TaxBracket[] = [];
+          snap.forEach((d) => list.push(d.data() as TaxBracket));
+          list.sort((a, b) => a.min_level - b.min_level);
+          useCartelStore.getState().setCloudState({ taxLogic: list });
+        }
+      },
+      () => {}
+    );
+    unsubs.push(unsubTax);
 
     const unsubContribs = onSnapshot(
       collection(db, "weekly_contributions"),
@@ -289,7 +344,6 @@ export function subscribeToCartelFirestore(): () => void {
   return () => unsubs.forEach((u) => u());
 }
 
-// Auth Wrappers
 export async function signInWithGoogleFirebase() {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });

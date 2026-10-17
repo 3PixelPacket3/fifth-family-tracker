@@ -8,16 +8,18 @@ import {
   sendFirebaseMagicLink,
   ensureUserProfile,
 } from "@/lib/firebase";
+import { APP_VERSION } from "@/store/useCartelStore";
 import PwaInstallPrompt from "@/components/PwaInstallPrompt";
+import LegalSecurityModal from "@/components/LegalSecurityModal";
 import {
   Mail,
   Lock,
   User as UserIcon,
   Award,
-  Chrome,
   LogIn,
   UserPlus,
   ShieldCheck,
+  Scale,
 } from "lucide-react";
 
 export default function LandingAuthScreen() {
@@ -26,6 +28,8 @@ export default function LandingAuthScreen() {
   const [password, setPassword] = useState("");
   const [gameName, setGameName] = useState("");
   const [levelInput, setLevelInput] = useState("1");
+  const [acceptedTerms, setAcceptedTerms] = useState(true);
+  const [legalOpen, setLegalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<{
     type: "success" | "error";
@@ -33,6 +37,13 @@ export default function LandingAuthScreen() {
   } | null>(null);
 
   const handleGoogleAuth = async () => {
+    if (!acceptedTerms) {
+      setNotice({
+        type: "error",
+        text: "Please accept the Virtual RPG Terms & Privacy Notice to continue.",
+      });
+      return;
+    }
     setLoading(true);
     setNotice(null);
     try {
@@ -53,6 +64,13 @@ export default function LandingAuthScreen() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) return;
+    if (!acceptedTerms) {
+      setNotice({
+        type: "error",
+        text: "Please accept the Virtual RPG Terms & Privacy Notice to continue.",
+      });
+      return;
+    }
     setLoading(true);
     setNotice(null);
 
@@ -83,27 +101,27 @@ export default function LandingAuthScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-cartel-bg flex flex-col justify-between px-4 py-6 select-none">
+    <div className="min-h-screen bg-cartel-bg flex flex-col justify-between px-4 py-5 select-none">
       {/* Subtle Top Bar with App Install Prompt */}
       <div className="w-full max-w-md mx-auto flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs text-slate-400">
           <ShieldCheck className="w-4 h-4 text-amber-400" />
           <span className="uppercase tracking-widest font-semibold text-[11px] text-amber-300/90">
-            Vinciguerra Lupo Cartel
+            Vinciguerra Lupo • v{APP_VERSION}
           </span>
         </div>
         <PwaInstallPrompt />
       </div>
 
       {/* Center Login / Create Account Card */}
-      <main className="w-full max-w-md mx-auto my-auto py-4">
-        <div className="rounded-2xl border border-amber-500/35 bg-cartel-card/95 p-6 shadow-2xl space-y-5">
+      <main className="w-full max-w-md mx-auto my-auto py-3">
+        <div className="rounded-2xl border border-amber-500/35 bg-cartel-card/95 p-5 shadow-2xl space-y-4">
           {/* Brand Logo & Title */}
-          <div className="flex flex-col items-center text-center space-y-2.5">
+          <div className="flex flex-col items-center text-center space-y-2">
             <img
               src="./cartel-logo.png"
               alt="The Fifth Family — Vinciguerra Lupo Crest"
-              className="w-20 h-20 rounded-2xl border-2 border-amber-500/60 shadow-lg object-cover"
+              className="w-18 h-18 rounded-2xl border-2 border-amber-500/60 shadow-lg object-cover"
             />
             <div>
               <h1 className="text-xl font-extrabold tracking-tight text-white">
@@ -188,7 +206,7 @@ export default function LandingAuthScreen() {
           </div>
 
           {/* Email & Password Form */}
-          <form onSubmit={handleSubmit} className="space-y-3">
+          <form onSubmit={handleSubmit} className="space-y-2.5">
             {mode === "create" && (
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2 relative">
@@ -199,7 +217,7 @@ export default function LandingAuthScreen() {
                     value={gameName}
                     onChange={(e) => setGameName(e.target.value)}
                     placeholder="In-Game Name"
-                    className="w-full rounded-xl bg-cartel-bg border border-cartel-border pl-8 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                    className="w-full rounded-xl bg-cartel-bg border border-cartel-border pl-8 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
                   />
                 </div>
                 <div className="relative">
@@ -213,7 +231,7 @@ export default function LandingAuthScreen() {
                     onChange={(e) => setLevelInput(e.target.value)}
                     placeholder="Lv."
                     title="Your Current In-Game Level"
-                    className="w-full rounded-xl bg-cartel-bg border border-cartel-border pl-8 pr-2 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                    className="w-full rounded-xl bg-cartel-bg border border-cartel-border pl-8 pr-2 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
                   />
                 </div>
               </div>
@@ -227,7 +245,7 @@ export default function LandingAuthScreen() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email Address"
-                className="w-full rounded-xl bg-cartel-bg border border-cartel-border pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                className="w-full rounded-xl bg-cartel-bg border border-cartel-border pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
               />
             </div>
 
@@ -241,10 +259,34 @@ export default function LandingAuthScreen() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Password (6+ characters)"
-                  className="w-full rounded-xl bg-cartel-bg border border-cartel-border pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                  className="w-full rounded-xl bg-cartel-bg border border-cartel-border pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
                 />
               </div>
             )}
+
+            {/* Legal Consent & Virtual Currency Acknowledgment Checkbox */}
+            <label className="flex items-start gap-2 text-[11px] text-slate-400 cursor-pointer pt-0.5">
+              <input
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+                className="mt-0.5 accent-amber-500 rounded cursor-pointer"
+              />
+              <span className="leading-snug">
+                I confirm I am 13+ and acknowledge this is a{" "}
+                <strong className="text-slate-200">
+                  100% fictional RPG companion utility
+                </strong>{" "}
+                (no real money).{" "}
+                <button
+                  type="button"
+                  onClick={() => setLegalOpen(true)}
+                  className="text-amber-300 hover:underline font-semibold"
+                >
+                  Legal, Privacy &amp; Security Notice
+                </button>
+              </span>
+            </label>
 
             <button
               type="submit"
@@ -260,7 +302,7 @@ export default function LandingAuthScreen() {
               {mode === "create" && (
                 <>
                   <UserPlus className="w-4 h-4" />
-                  <span>Submit Account for Admin / Don Approval</span>
+                  <span>Submit Account for Approval</span>
                 </>
               )}
               {mode === "magic" && (
@@ -284,12 +326,10 @@ export default function LandingAuthScreen() {
             </div>
           )}
 
-          <div className="text-center pt-1">
+          <div className="text-center">
             <button
               type="button"
-              onClick={() =>
-                setMode(mode === "magic" ? "signin" : "magic")
-              }
+              onClick={() => setMode(mode === "magic" ? "signin" : "magic")}
               className="text-[11px] text-slate-400 hover:text-amber-300 underline cursor-pointer"
             >
               {mode === "magic"
@@ -300,9 +340,22 @@ export default function LandingAuthScreen() {
         </div>
       </main>
 
-      <footer className="w-full max-w-md mx-auto text-center text-[11px] text-slate-500">
-        New operative accounts require approval by the Admin or appointed Don.
+      <footer className="w-full max-w-md mx-auto flex items-center justify-between text-[11px] text-slate-500">
+        <span>Fictional RPG Companion • No Real Currency</span>
+        <button
+          type="button"
+          onClick={() => setLegalOpen(true)}
+          className="text-slate-400 hover:text-amber-300 flex items-center gap-1 underline cursor-pointer"
+        >
+          <Scale className="w-3 h-3" />
+          <span>Legal &amp; Security</span>
+        </button>
       </footer>
+
+      <LegalSecurityModal
+        isOpen={legalOpen}
+        onClose={() => setLegalOpen(false)}
+      />
     </div>
   );
 }
