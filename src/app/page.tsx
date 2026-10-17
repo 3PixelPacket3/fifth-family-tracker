@@ -117,11 +117,11 @@ export default function CartelTrackerApp() {
         <div className="text-center space-y-3">
           <img
             src="./cartel-logo.png"
-            alt="The Fifth Family"
+            alt="Vinciguerra Lupo"
             className="w-16 h-16 rounded-2xl border border-amber-500/50 mx-auto animate-pulse object-cover"
           />
           <p className="text-xs uppercase tracking-widest text-amber-300 font-bold">
-            The Fifth Family • v{APP_VERSION}
+            Vinciguerra Lupo • v{APP_VERSION}
           </p>
         </div>
       </div>
@@ -185,13 +185,13 @@ export default function CartelTrackerApp() {
           <div className="flex items-center gap-2.5 min-w-0">
             <img
               src="./cartel-logo.png"
-              alt="Fifth Family Logo"
+              alt="Vinciguerra Lupo Logo"
               className="w-9 h-9 rounded-xl border border-amber-500/50 shrink-0 object-cover"
             />
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <h1 className="text-sm font-extrabold tracking-tight text-white truncate">
-                  THE FIFTH FAMILY
+                  VINCIGUERRA LUPO
                 </h1>
                 <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
                   {effectiveRank}

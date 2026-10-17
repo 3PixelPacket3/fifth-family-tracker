@@ -115,7 +115,7 @@ export default function PwaInstallPrompt() {
               <strong className="text-amber-300 inline-flex items-center gap-1">
                 <PlusSquare className="w-3.5 h-3.5" /> Add to Home Screen
               </strong>{" "}
-              to launch The Fifth Family full-screen with its custom crest icon.
+              to launch <strong>Lupo Ledger</strong> full-screen with its custom crest icon.
             </p>
           ) : (
             <p className="text-xs text-slate-300 leading-relaxed">

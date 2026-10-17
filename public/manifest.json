@@ -1,7 +1,7 @@
 {
-  "name": "The Fifth Family — Vinciguerra Lupo Cartel",
-  "short_name": "Fifth Family",
-  "description": "Official Admin & Roster Tax Tracker for the Vinciguerra Lupo Cartel in The Fifth Family RPG.",
+  "name": "Vinciguerra Lupo — Family Ledger",
+  "short_name": "Lupo Ledger",
+  "description": "Private Family Roster, Weekly Tax & Treasury Command Ledger for the Vinciguerra Lupo Syndicate.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

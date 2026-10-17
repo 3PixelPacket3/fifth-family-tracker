@@ -21,7 +21,7 @@ export default function PendingApprovalScreen({
     <div className="min-h-screen bg-cartel-bg flex flex-col justify-between px-4 py-6">
       <div className="w-full max-w-md mx-auto flex items-center justify-between">
         <span className="text-xs font-bold uppercase tracking-widest text-amber-400">
-          The Fifth Family
+          Vinciguerra Lupo
         </span>
         <PwaInstallPrompt />
       </div>

@@ -92,7 +92,7 @@ export const DEFAULT_TAX_LOGIC: TaxBracket[] = [
   { min_level: 140, expected_tax: 86_000_000, bracket_label: "Lv 140+ ($86M)" },
 ];
 
-export const DEFAULT_WELCOME_HTML = `<div style="padding:14px 16px;border-radius:14px;background:linear-gradient(135deg,#141722 0%,#1d1520 100%);border:1px solid rgba(212,175,55,0.45);color:#f8fafc;font-family:system-ui,sans-serif;"><div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#d4af37;font-weight:700;margin-bottom:4px;">VINCIGUERRA LUPO SYNDICATE</div><div style="font-size:15px;font-weight:800;color:#ffffff;margin-bottom:4px;">Welcome to The Fifth Family Command Ledger</div><div style="font-size:12px;color:#cbd5e1;line-height:1.45;">All family tributes are logged weekly before Sunday Rollover. Contact the Don or App Developer for rank promotions or tax adjustments.</div></div>`;
+export const DEFAULT_WELCOME_HTML = `<div style="padding:14px 16px;border-radius:14px;background:linear-gradient(135deg,#141722 0%,#1d1520 100%);border:1px solid rgba(212,175,55,0.45);color:#f8fafc;font-family:system-ui,sans-serif;"><div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#d4af37;font-weight:700;margin-bottom:4px;">VINCIGUERRA LUPO SYNDICATE</div><div style="font-size:15px;font-weight:800;color:#ffffff;margin-bottom:4px;">Welcome to the Lupo Family Command Ledger</div><div style="font-size:12px;color:#cbd5e1;line-height:1.45;">All family tributes are logged weekly before Sunday Rollover. Contact the Don or App Developer for rank promotions or tax adjustments.</div></div>`;
 
 export function getCurrentSundayISO(): string {
   const now = new Date();

@@ -120,15 +120,15 @@ export default function LandingAuthScreen() {
           <div className="flex flex-col items-center text-center space-y-2">
             <img
               src="./cartel-logo.png"
-              alt="The Fifth Family — Vinciguerra Lupo Crest"
+              alt="Vinciguerra Lupo Crest"
               className="w-18 h-18 rounded-2xl border-2 border-amber-500/60 shadow-lg object-cover"
             />
             <div>
               <h1 className="text-xl font-extrabold tracking-tight text-white">
-                THE FIFTH FAMILY
+                VINCIGUERRA LUPO
               </h1>
               <p className="text-xs text-slate-400 mt-0.5">
-                Official Family Tax &amp; Roster Management Portal
+                Family Tax &amp; Roster Command Ledger
               </p>
             </div>
           </div>

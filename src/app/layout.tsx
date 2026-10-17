@@ -2,15 +2,15 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "The Fifth Family — Vinciguerra Lupo Cartel Tax & Roster Portal",
+  title: "Vinciguerra Lupo — Family Tax & Roster Ledger",
   description:
-    "Official mobile-first family tax tracker, roster command portal, and treasury ledger for the Vinciguerra Lupo Cartel in The Fifth Family RPG.",
-  applicationName: "The Fifth Family",
+    "Mobile-first family tax tracker, roster command portal, and virtual treasury ledger for the Vinciguerra Lupo Syndicate.",
+  applicationName: "Lupo Ledger",
   manifest: "./manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Fifth Family",
+    title: "Lupo Ledger",
   },
   icons: {
     icon: [
@@ -20,17 +20,17 @@ export const metadata: Metadata = {
     apple: [{ url: "./cartel-logo.png", sizes: "512x512", type: "image/png" }],
   },
   openGraph: {
-    title: "The Fifth Family — Vinciguerra Lupo Cartel",
+    title: "Vinciguerra Lupo — Family Ledger",
     description:
-      "Official Family Tax & Roster Management Portal for The Fifth Family RPG.",
+      "Official Family Tax & Roster Management Portal for the Vinciguerra Lupo Syndicate.",
     type: "website",
     images: ["./cartel-logo.png"],
   },
   twitter: {
     card: "summary_large_image",
-    title: "The Fifth Family — Vinciguerra Lupo Cartel",
+    title: "Vinciguerra Lupo — Family Ledger",
     description:
-      "Official Family Tax & Roster Management Portal for The Fifth Family RPG.",
+      "Official Family Tax & Roster Management Portal for the Vinciguerra Lupo Syndicate.",
     images: ["./cartel-logo.png"],
   },
 };
@@ -54,6 +54,7 @@ export default function RootLayout({
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="Lupo Ledger" />
         <meta
           name="apple-mobile-web-app-status-bar-style"
           content="black-translucent"
