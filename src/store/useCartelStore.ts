@@ -3,19 +3,26 @@ import { persist } from "zustand/middleware";
 
 export const MASTER_ADMIN_EMAIL = "oharajoshua333@gmail.com";
 
-export type MemberRank = "Don" | "Underboss" | "Capo" | "Soldier" | "Associate";
+export type MemberRank =
+  | "App Developer"
+  | "Don"
+  | "Underboss"
+  | "Capo"
+  | "Soldier"
+  | "Associate";
 export type AppRole = "Admin" | "User";
 export type ApprovalStatus = "pending" | "approved" | "rejected";
 export type ContributionStatus = "Pending" | "Complete";
 
 export interface Profile {
   id: string;
-  uid?: string; // Firebase Auth UID if registered via login screen
+  uid?: string; // Firebase Auth UID if signed up online
   email?: string;
   game_name: string;
   rank: MemberRank;
   level: number;
-  custom_tax_override?: number | null; // Optional per-member custom tax set by Admin/Don
+  custom_tax_override?: number | null; // Optional per-member custom tax set by App Developer or Don
+  linked_member_id?: string | null; // If an online account is assigned/merged to a created roster member
   role: AppRole;
   approval_status: ApprovalStatus;
   is_exempt?: boolean;
@@ -38,16 +45,16 @@ export interface WeeklyContribution {
   updated_at: string;
 }
 
-// Default Tax Logic Table (Level -> Expected Tax from Spec)
+// Default Tax Logic Table (Level -> Expected Tax)
 export const DEFAULT_TAX_LOGIC: TaxBracket[] = [
-  { min_level: 1, expected_tax: 0, bracket_label: "Initiate (Lv 1–39)" },
+  { min_level: 1, expected_tax: 0, bracket_label: "Lv 1–39 ($0)" },
   { min_level: 40, expected_tax: 2_000_000, bracket_label: "Lv 40+ ($2M)" },
   { min_level: 50, expected_tax: 4_000_000, bracket_label: "Lv 50+ ($4M)" },
   { min_level: 60, expected_tax: 7_000_000, bracket_label: "Lv 60+ ($7M)" },
   { min_level: 140, expected_tax: 86_000_000, bracket_label: "Lv 140+ ($86M)" },
 ];
 
-export const DEFAULT_WELCOME_HTML = `<div style="padding:14px 16px;border-radius:14px;background:linear-gradient(135deg,#141722 0%,#1d1520 100%);border:1px solid rgba(212,175,55,0.45);color:#f8fafc;font-family:system-ui,sans-serif;"><div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#d4af37;font-weight:700;margin-bottom:4px;">VINCIGUERRA LUPO SYNDICATE</div><div style="font-size:15px;font-weight:800;color:#ffffff;margin-bottom:4px;">Welcome to The Fifth Family Command Ledger</div><div style="font-size:12px;color:#cbd5e1;line-height:1.45;">All family tributes are logged weekly before Sunday Rollover. Contact the Don or Admin for rank promotions or tax adjustments.</div></div>`;
+export const DEFAULT_WELCOME_HTML = `<div style="padding:14px 16px;border-radius:14px;background:linear-gradient(135deg,#141722 0%,#1d1520 100%);border:1px solid rgba(212,175,55,0.45);color:#f8fafc;font-family:system-ui,sans-serif;"><div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#d4af37;font-weight:700;margin-bottom:4px;">VINCIGUERRA LUPO SYNDICATE</div><div style="font-size:15px;font-weight:800;color:#ffffff;margin-bottom:4px;">Welcome to The Fifth Family Command Ledger</div><div style="font-size:12px;color:#cbd5e1;line-height:1.45;">All family tributes are logged weekly before Sunday Rollover. Contact the Don or App Developer for rank promotions or tax adjustments.</div></div>`;
 
 export function getCurrentSundayISO(): string {
   const now = new Date();
@@ -58,10 +65,10 @@ export function getCurrentSundayISO(): string {
 }
 
 export function calculateMemberExpectedTax(
-  member: Pick<Profile, "level" | "is_exempt" | "custom_tax_override">,
+  member: Pick<Profile, "level" | "is_exempt" | "custom_tax_override" | "rank">,
   brackets: TaxBracket[]
 ): { expected_tax: number; bracket_label: string } {
-  if (member.is_exempt) {
+  if (member.is_exempt || member.rank === "App Developer") {
     return { expected_tax: 0, bracket_label: "Exempt" };
   }
   if (
@@ -70,7 +77,7 @@ export function calculateMemberExpectedTax(
   ) {
     return {
       expected_tax: member.custom_tax_override,
-      bracket_label: "Custom Admin Tax",
+      bracket_label: "Custom Assigned Tax",
     };
   }
   const sorted = [...brackets].sort((a, b) => b.min_level - a.min_level);
@@ -100,7 +107,6 @@ export function formatCartelCurrency(amount: number, compact = false): string {
 }
 
 interface CartelState {
-  // Fresh state — ZERO pre-populated demo members or fake payments
   profiles: Profile[];
   taxLogic: TaxBracket[];
   contributions: WeeklyContribution[];
@@ -108,10 +114,7 @@ interface CartelState {
   baseTreasury: number;
   welcomeHtml: string;
 
-  // Hydrate from Cloud Firestore realtime listener
   setCloudState: (partial: Partial<CartelState>) => void;
-
-  // Member & Approval Actions
   upsertProfileLocal: (profile: Profile) => void;
   removeProfileLocal: (profileId: string) => void;
   setActiveWeekStart: (weekStart: string) => void;
@@ -138,9 +141,9 @@ interface CartelState {
 export const useCartelStore = create<CartelState>()(
   persist(
     (set, get) => ({
-      profiles: [], // Strictly fresh account: no pre-populated demo roster
+      profiles: [],
       taxLogic: DEFAULT_TAX_LOGIC,
-      contributions: [], // Strictly fresh account: no pre-populated demo payments
+      contributions: [],
       activeWeekStart: getCurrentSundayISO(),
       baseTreasury: 0,
       welcomeHtml: DEFAULT_WELCOME_HTML,
@@ -260,7 +263,7 @@ export const useCartelStore = create<CartelState>()(
               ...rec,
               amount_paid: expected_tax,
               status: "Complete",
-              receipt_note: rec.receipt_note || "Marked Paid by Admin",
+              receipt_note: rec.receipt_note || "Marked Paid",
               updated_at: new Date().toISOString(),
             };
           }
@@ -273,7 +276,7 @@ export const useCartelStore = create<CartelState>()(
             week_start_date: targetWeek,
             amount_paid: expected_tax,
             status: "Complete",
-            receipt_note: "Marked Paid by Admin",
+            receipt_note: "Marked Paid",
             updated_at: new Date().toISOString(),
           };
           updated.push(savedRecord);

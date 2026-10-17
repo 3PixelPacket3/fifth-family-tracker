@@ -25,6 +25,8 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  Eye,
+  UserCheck,
 } from "lucide-react";
 
 interface RosterTaxManagerProps {
@@ -41,6 +43,7 @@ const RANKS: MemberRank[] = [
 ];
 
 const RANK_STYLE: Record<MemberRank, string> = {
+  "App Developer": "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
   Don: "bg-amber-500/20 text-amber-300 border-amber-500/40",
   Underboss: "bg-rose-500/20 text-rose-300 border-rose-500/40",
   Capo: "bg-purple-500/20 text-purple-300 border-purple-500/40",
@@ -57,38 +60,46 @@ export default function WeeklyDashboardView({
     taxLogic,
     contributions,
     activeWeekStart,
-    baseTreasury,
     welcomeHtml,
     logPaymentLocal,
     toggleMemberPaidLocal,
   } = useCartelStore();
 
-  // Add Member Modal / Form state
+  // Add Member Form state (App Developer & Don only)
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newRank, setNewRank] = useState<MemberRank>("Soldier");
   const [newLevel, setNewLevel] = useState("50");
   const [newCustomTax, setNewCustomTax] = useState("");
 
-  // Selected Member for Editing or Logging Payment
+  // Selected Member for Logging Payment (App Developer & Don only)
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [payAmountInput, setPayAmountInput] = useState("");
   const [payNoteInput, setPayNoteInput] = useState("");
 
-  // Edit Member Drawer state
+  // Edit Member Drawer state (App Developer & Don only)
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [editRank, setEditRank] = useState<MemberRank>("Soldier");
   const [editLevel, setEditLevel] = useState("50");
   const [editCustomTax, setEditCustomTax] = useState("");
 
-  // Search & Pagination (keeps block strictly compact on mobile)
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const PER_PAGE = 5;
 
+  // Show all approved family members (excluding the App Developer system account from the tax obligation list unless desired)
   const approvedMembers = profiles.filter(
-    (p) => p.approval_status === "approved"
+    (p) => p.approval_status === "approved" && p.rank !== "App Developer"
   );
+
+  // Resolve the logged-in member's assigned roster profile (either direct ID or linked_member_id)
+  const myAssignedProfile =
+    approvedMembers.find(
+      (m) =>
+        m.id === currentUserProfile.linked_member_id ||
+        m.id === currentUserProfile.id ||
+        m.uid === currentUserProfile.uid
+    ) || null;
 
   const filteredMembers = approvedMembers.filter((m) =>
     m.game_name.toLowerCase().includes(search.toLowerCase())
@@ -101,10 +112,9 @@ export default function WeeklyDashboardView({
     (safePage + 1) * PER_PAGE
   );
 
-  // Add a new member directly (Admin / Don)
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim()) return;
+    if (!isAdminOrDon || !newName.trim()) return;
     const lvl = Math.max(1, parseInt(newLevel, 10) || 1);
     const customTaxVal =
       newCustomTax.trim() !== ""
@@ -128,16 +138,16 @@ export default function WeeklyDashboardView({
     setShowAddForm(false);
   };
 
-  // Log a payment for a member
   const handleLogPayment = async (e: React.FormEvent, playerId: string) => {
     e.preventDefault();
+    if (!isAdminOrDon) return;
     const amount = parseFloat(payAmountInput.replace(/[^0-9.]/g, ""));
-    if (!amount || amount <= 0) return;
+    if (Number.isNaN(amount) || amount < 0) return;
 
     const saved = logPaymentLocal(
       playerId,
       amount,
-      payNoteInput.trim() || "Logged payment",
+      payNoteInput.trim() || "Logged by Admin/Don",
       "add"
     );
     if (saved) {
@@ -151,9 +161,8 @@ export default function WeeklyDashboardView({
     setSelectedMemberId(null);
   };
 
-  // Toggle Paid / Pending in 1 tap
   const handleQuickTogglePaid = async (playerId: string) => {
-    if (!isAdminOrDon && playerId !== currentUserProfile.id) return;
+    if (!isAdminOrDon) return;
     const saved = toggleMemberPaidLocal(playerId);
     if (saved) {
       await saveContributionToCloud(saved);
@@ -163,7 +172,6 @@ export default function WeeklyDashboardView({
     }
   };
 
-  // Open Edit Drawer for a member
   const startEditingMember = (member: Profile) => {
     setEditingMemberId(member.id);
     setEditRank(member.rank);
@@ -176,6 +184,7 @@ export default function WeeklyDashboardView({
   };
 
   const handleSaveMemberEdit = async (member: Profile) => {
+    if (!isAdminOrDon) return;
     const lvl = Math.max(1, parseInt(editLevel, 10) || 1);
     const customTaxVal =
       editCustomTax.trim() !== ""
@@ -187,11 +196,7 @@ export default function WeeklyDashboardView({
       rank: editRank,
       level: lvl,
       custom_tax_override: customTaxVal,
-      role:
-        member.email?.toLowerCase() === "oharajoshua333@gmail.com" ||
-        editRank === "Don"
-          ? "Admin"
-          : "User",
+      role: editRank === "Don" ? "Admin" : "User",
     };
 
     await saveProfileToCloud(updated);
@@ -199,11 +204,11 @@ export default function WeeklyDashboardView({
   };
 
   const handleRemoveMember = async (memberId: string) => {
+    if (!isAdminOrDon) return;
     await deleteProfileFromCloud(memberId);
     if (editingMemberId === memberId) setEditingMemberId(null);
   };
 
-  // Weekly Summary Totals
   const weeklyStats = approvedMembers.reduce(
     (acc, m) => {
       const { expected_tax } = calculateMemberExpectedTax(m, taxLogic);
@@ -221,7 +226,7 @@ export default function WeeklyDashboardView({
 
   return (
     <div className="w-full space-y-4">
-      {/* Custom Welcome Banner (Editable by Admin in Admin Tab) */}
+      {/* Custom Welcome Message Banner (Editable only by App Developer in Admin tab) */}
       {welcomeHtml && (
         <section
           aria-label="Family Welcome Message"
@@ -230,17 +235,105 @@ export default function WeeklyDashboardView({
         />
       )}
 
-      {/* Main Roster & Tax Tracker Card (<= 564px budget) */}
+      {/* Standard Member Personal Status Card (When logged in as a View-Only Member) */}
+      {!isAdminOrDon && myAssignedProfile && (
+        <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-amber-500/40 bg-cartel-card p-4 shadow-xl">
+          <div className="flex items-center justify-between border-b border-cartel-border pb-2.5">
+            <div className="flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-amber-400" />
+              <div>
+                <h2 className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                  Your Assigned Family Profile
+                </h2>
+                <p className="text-sm font-extrabold text-white">
+                  {myAssignedProfile.game_name} ({myAssignedProfile.rank} • Lv.
+                  {myAssignedProfile.level})
+                </p>
+              </div>
+            </div>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-800 text-slate-300 border border-cartel-border">
+              <Eye className="w-3 h-3 text-amber-400" />
+              <span>Member View Only</span>
+            </span>
+          </div>
+
+          {(() => {
+            const { expected_tax, bracket_label } = calculateMemberExpectedTax(
+              myAssignedProfile,
+              taxLogic
+            );
+            const myRec = contributions.find(
+              (c) =>
+                c.player_id === myAssignedProfile.id &&
+                c.week_start_date === activeWeekStart
+            );
+            const myPaid = myRec?.amount_paid || 0;
+            const myRemaining = Math.max(0, expected_tax - myPaid);
+
+            return (
+              <div className="grid grid-cols-3 gap-2.5 mt-3">
+                <div className="rounded-xl bg-cartel-surface p-2.5 border border-cartel-border">
+                  <p className="text-[10px] uppercase text-slate-400">
+                    Your Tax Rate
+                  </p>
+                  <p className="text-base font-extrabold text-amber-300 mt-0.5">
+                    {formatCartelCurrency(expected_tax, true)}
+                  </p>
+                  <p className="text-[10px] text-slate-500 truncate">
+                    {bracket_label}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-cartel-surface p-2.5 border border-cartel-border">
+                  <p className="text-[10px] uppercase text-slate-400">
+                    Amount Paid
+                  </p>
+                  <p className="text-base font-extrabold text-emerald-400 mt-0.5">
+                    {formatCartelCurrency(myPaid, true)}
+                  </p>
+                  <p className="text-[10px] text-slate-500">
+                    Wk {activeWeekStart}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-cartel-surface p-2.5 border border-cartel-border">
+                  <p className="text-[10px] uppercase text-slate-400">
+                    Remaining
+                  </p>
+                  <p
+                    className={`text-base font-extrabold mt-0.5 ${
+                      myRemaining === 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}
+                  >
+                    {formatCartelCurrency(myRemaining, true)}
+                  </p>
+                  <p className="text-[10px] text-slate-500">
+                    {myRemaining === 0 ? "Complete" : "Pending"}
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+        </section>
+      )}
+
+      {/* Main Family Roster & Weekly Tax Card (Full control for App Developer & Don; View-Only for Members) */}
       <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-cartel-border bg-cartel-card p-4 shadow-xl flex flex-col justify-between space-y-3">
-        {/* Top Summary & Add Member Button */}
         <div>
           <div className="flex items-center justify-between gap-2 border-b border-cartel-border pb-3">
             <div>
-              <h2 className="text-sm font-extrabold text-white uppercase tracking-wider">
-                Family Roster &amp; Weekly Tax
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-extrabold text-white uppercase tracking-wider">
+                  Family Roster &amp; Weekly Tax
+                </h2>
+                {!isAdminOrDon && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-cartel-border">
+                    View Only
+                  </span>
+                )}
+              </div>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Week of <strong className="text-amber-300">{activeWeekStart}</strong> • Collected{" "}
+                Week of{" "}
+                <strong className="text-amber-300">{activeWeekStart}</strong> •
+                Collected{" "}
                 <strong className="text-emerald-400">
                   {formatCartelCurrency(weeklyStats.paid, true)}
                 </strong>{" "}
@@ -260,14 +353,14 @@ export default function WeeklyDashboardView({
             )}
           </div>
 
-          {/* Inline Add Member Form (Admin / Don) */}
+          {/* Inline Add Member Form (App Developer / Don Only) */}
           {showAddForm && isAdminOrDon && (
             <form
               onSubmit={handleAddMember}
               className="mt-3 rounded-xl bg-cartel-surface border border-amber-500/40 p-3 space-y-2.5"
             >
               <div className="text-xs font-bold text-amber-300 uppercase tracking-wider">
-                Add Family Member to Roster
+                Create Family Member Profile
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <input
@@ -307,7 +400,7 @@ export default function WeeklyDashboardView({
                   className="col-span-2 sm:col-span-1 rounded-lg bg-cartel-bg border border-cartel-border px-2.5 py-1.5 text-xs text-amber-300"
                 />
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-end">
                 <button
                   type="submit"
                   className="rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3.5 py-1.5 text-xs cursor-pointer"
@@ -318,7 +411,6 @@ export default function WeeklyDashboardView({
             </form>
           )}
 
-          {/* Search Bar if members exist */}
           {approvedMembers.length > 0 && !showAddForm && (
             <div className="relative mt-2.5">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -329,22 +421,22 @@ export default function WeeklyDashboardView({
                   setSearch(e.target.value);
                   setPage(0);
                 }}
-                placeholder="Search member by name..."
+                placeholder="Search family member..."
                 className="w-full rounded-xl bg-cartel-surface border border-cartel-border pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
               />
             </div>
           )}
 
-          {/* Empty State (Fresh Account — Zero Pre-Populated Demo Data) */}
           {approvedMembers.length === 0 ? (
             <div className="py-10 text-center space-y-2">
               <ShieldCheck className="w-8 h-8 text-amber-400/70 mx-auto" />
               <p className="text-sm font-bold text-white">
-                Fresh Family Roster — No Members Added Yet
+                No Family Members on the Roster Yet
               </p>
               <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                Click <strong className="text-amber-300">Add Member</strong> above to add operatives, set their rank &amp; tax, or approve new accounts in the{" "}
-                <strong className="text-amber-300">Admin / Approvals</strong> tab.
+                {isAdminOrDon
+                  ? "Use the Add Member button above to create your family roster, set each member's rank and tax rate, and log weekly payments."
+                  : "The App Developer or Family Don has not published the roster yet."}
               </p>
             </div>
           ) : (
@@ -363,15 +455,26 @@ export default function WeeklyDashboardView({
                 const isPaid = paid >= expected_tax;
                 const isSelectedForPay = selectedMemberId === member.id;
                 const isEditing = editingMemberId === member.id;
+                const isMe = myAssignedProfile?.id === member.id;
 
                 return (
-                  <div key={member.id} className="py-2.5 space-y-2">
+                  <div
+                    key={member.id}
+                    className={`py-2.5 space-y-2 rounded-lg px-1.5 ${
+                      isMe ? "bg-amber-500/10" : ""
+                    }`}
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <span className="font-bold text-sm text-white truncate">
                             {member.game_name}
                           </span>
+                          {isMe && (
+                            <span className="text-[9px] uppercase font-extrabold px-1.5 py-0.2 rounded bg-amber-500 text-slate-950">
+                              You
+                            </span>
+                          )}
                           <span
                             className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
                               RANK_STYLE[member.rank]
@@ -385,7 +488,7 @@ export default function WeeklyDashboardView({
                         </div>
                         <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
                           <span>
-                            Tax:{" "}
+                            Tax Rate:{" "}
                             <strong className="text-amber-300">
                               {formatCartelCurrency(expected_tax, true)}
                             </strong>
@@ -400,10 +503,9 @@ export default function WeeklyDashboardView({
                         </div>
                       </div>
 
-                      {/* Action Buttons: Log Payment, Mark Paid, Edit */}
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {(isAdminOrDon ||
-                          member.id === currentUserProfile.id) && (
+                      {/* Controls for App Developer & Don vs Read-Only Badge for Members */}
+                      {isAdminOrDon ? (
+                        <div className="flex items-center gap-1.5 shrink-0">
                           <button
                             type="button"
                             onClick={() =>
@@ -412,68 +514,84 @@ export default function WeeklyDashboardView({
                               )
                             }
                             className="px-2.5 py-1.5 rounded-xl bg-cartel-surface hover:bg-slate-800 border border-cartel-border text-xs font-semibold text-amber-300 flex items-center gap-1 cursor-pointer"
-                            title="Log custom payment amount"
+                            title="Log payment amount"
                           >
                             <DollarSign className="w-3.5 h-3.5" />
-                            <span>Pay</span>
+                            <span>Log Pay</span>
                           </button>
-                        )}
 
-                        {isAdminOrDon && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleQuickTogglePaid(member.id)}
-                              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 cursor-pointer ${
-                                isPaid
-                                  ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
-                                  : "bg-rose-500/15 text-rose-300 border-rose-500/40"
-                              }`}
-                            >
-                              {isPaid ? (
-                                <>
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Paid</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Clock className="w-3.5 h-3.5" />
-                                  <span>Pending</span>
-                                </>
-                              )}
-                            </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickTogglePaid(member.id)}
+                            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 cursor-pointer ${
+                              isPaid
+                                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+                                : "bg-rose-500/15 text-rose-300 border-rose-500/40"
+                            }`}
+                          >
+                            {isPaid ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Paid</span>
+                              </>
+                            ) : (
+                              <>
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>Pending</span>
+                              </>
+                            )}
+                          </button>
 
-                            <button
-                              type="button"
-                              onClick={() =>
-                                isEditing
-                                  ? setEditingMemberId(null)
-                                  : startEditingMember(member)
-                              }
-                              className="p-1.5 rounded-xl bg-cartel-surface hover:bg-slate-800 border border-cartel-border text-slate-300 cursor-pointer"
-                              title="Edit Rank, Level, Tax or Remove Member"
-                            >
-                              <Sliders className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              isEditing
+                                ? setEditingMemberId(null)
+                                : startEditingMember(member)
+                            }
+                            className="p-1.5 rounded-xl bg-cartel-surface hover:bg-slate-800 border border-cartel-border text-slate-300 cursor-pointer"
+                            title="Set Member Rank, Level, Individual Tax Rate, or Remove"
+                          >
+                            <Sliders className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          className={`shrink-0 px-2.5 py-1 rounded-xl text-xs font-bold border flex items-center gap-1 ${
+                            isPaid
+                              ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+                              : "bg-amber-500/15 text-amber-300 border-amber-500/40"
+                          }`}
+                        >
+                          {isPaid ? (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Paid</span>
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="w-3.5 h-3.5" />
+                              <span>Pending</span>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Inline Log Payment Drawer */}
-                    {isSelectedForPay && (
+                    {/* Inline Log Payment Drawer (App Developer & Don Only) */}
+                    {isSelectedForPay && isAdminOrDon && (
                       <form
                         onSubmit={(e) => handleLogPayment(e, member.id)}
                         className="flex flex-wrap items-center gap-1.5 bg-cartel-surface/90 border border-amber-500/30 rounded-xl p-2"
                       >
                         <input
                           type="number"
-                          min={1}
+                          min={0}
                           step="any"
                           required
                           value={payAmountInput}
                           onChange={(e) => setPayAmountInput(e.target.value)}
-                          placeholder={`Amount (e.g. ${expected_tax || 4000000})`}
+                          placeholder={`Amount paid ($)`}
                           className="flex-1 min-w-[130px] rounded-lg bg-cartel-bg border border-cartel-border px-2.5 py-1 text-xs text-white"
                         />
                         <input
@@ -492,7 +610,7 @@ export default function WeeklyDashboardView({
                       </form>
                     )}
 
-                    {/* Inline Edit Member (Rank, Level, Custom Tax, Remove) */}
+                    {/* Inline Edit Member: Rank, Level, Individual Tax Rate, or Delete */}
                     {isEditing && isAdminOrDon && (
                       <div className="flex flex-wrap items-center justify-between gap-2 bg-cartel-surface/90 border border-cartel-border rounded-xl p-2.5 text-xs">
                         <div className="flex flex-wrap items-center gap-1.5">
@@ -523,9 +641,9 @@ export default function WeeklyDashboardView({
                             step="any"
                             value={editCustomTax}
                             onChange={(e) => setEditCustomTax(e.target.value)}
-                            placeholder="Auto Tax by Lv"
-                            className="w-28 rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-amber-300"
-                            title="Custom Tax Override (leave blank to use Level Bracket)"
+                            placeholder="Custom Tax ($)"
+                            className="w-32 rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-amber-300"
+                            title="Set exact tax amount for this member (or leave blank for Level Bracket)"
                           />
                         </div>
                         <div className="flex items-center gap-1.5">

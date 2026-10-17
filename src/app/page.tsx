@@ -155,7 +155,7 @@ export default function CartelTrackerApp() {
                   THE FIFTH FAMILY
                 </h1>
                 <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                  {isMasterAdmin ? "Master Admin" : userProfile.rank}
+                  {isMasterAdmin ? "App Developer" : userProfile.rank}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-slate-400">
@@ -191,8 +191,8 @@ export default function CartelTrackerApp() {
             isAdminOrDon={isAdminOrDon}
           />
         )}
-        {activeTab === "vault" && <DataVaultView />}
-        {activeTab === "admin" && (
+        {activeTab === "vault" && <DataVaultView isAdminOrDon={isAdminOrDon} />}
+        {activeTab === "admin" && isAdminOrDon && (
           <AdminCommandView
             isMasterAdmin={isMasterAdmin}
             isAdminOrDon={isAdminOrDon}
@@ -200,12 +200,16 @@ export default function CartelTrackerApp() {
         )}
       </main>
 
-      {/* Bottom Navigation Dock */}
+      {/* Bottom Navigation Dock (2 View-Only tabs for Standard Members; 3 tabs for App Developer & Don) */}
       <nav
         aria-label="Primary Navigation"
         className="fixed bottom-0 inset-x-0 z-30 border-t border-cartel-border bg-cartel-surface/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)]"
       >
-        <div className="w-full max-w-md md:max-w-2xl mx-auto px-4 py-2 grid grid-cols-3 gap-2">
+        <div
+          className={`w-full max-w-md md:max-w-2xl mx-auto px-4 py-2 grid gap-2 ${
+            isAdminOrDon ? "grid-cols-3" : "grid-cols-2"
+          }`}
+        >
           <button
             type="button"
             onClick={() => setActiveTab("dashboard")}
@@ -232,23 +236,25 @@ export default function CartelTrackerApp() {
             <span>Data Vault</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("admin")}
-            className={`relative flex flex-col items-center justify-center py-1.5 px-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-              activeTab === "admin"
-                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4 mb-0.5" />
-            <span>Admin &amp; Approvals</span>
-            {isAdminOrDon && pendingApprovalsCount > 0 && (
-              <span className="absolute top-1 right-3 px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-rose-500 text-white">
-                {pendingApprovalsCount}
-              </span>
-            )}
-          </button>
+          {isAdminOrDon && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("admin")}
+              className={`relative flex flex-col items-center justify-center py-1.5 px-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                activeTab === "admin"
+                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4 mb-0.5" />
+              <span>Admin &amp; Don</span>
+              {pendingApprovalsCount > 0 && (
+                <span className="absolute top-1 right-3 px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-rose-500 text-white">
+                  {pendingApprovalsCount}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       </nav>
     </div>

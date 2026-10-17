@@ -18,12 +18,11 @@ import {
   UserCheck,
   UserX,
   Code2,
-  Copy,
-  Check,
   CalendarSync,
   Sliders,
   Crown,
   Sparkles,
+  Link2,
 } from "lucide-react";
 
 interface AdminCommandViewProps {
@@ -47,31 +46,28 @@ export default function AdminCommandView({
     (p) => p.approval_status === "pending"
   );
   const approvedMembers = profiles.filter(
-    (p) => p.approval_status === "approved"
+    (p) => p.approval_status === "approved" && p.rank !== "App Developer"
   );
 
-  // Welcome Message Custom HTML/CSS State (Editable by Master Admin oharajoshua333@gmail.com)
+  // Track which existing created roster profile to link a pending online signup to
+  const [linkSelections, setLinkSelections] = useState<Record<string, string>>(
+    {}
+  );
+
+  // Welcome Message Custom HTML/CSS State (Strictly App Developer oharajoshua333@gmail.com only)
   const [customWelcomeCode, setCustomWelcomeCode] = useState(welcomeHtml);
   const [welcomeSaved, setWelcomeSaved] = useState(false);
 
-  // Single-Line HTML/CSS Alert Generator State
-  const [popupTitle, setPopupTitle] = useState(
-    "The Fifth Family — Weekly Tax & Onboarding Notice"
-  );
-  const [popupBody, setPopupBody] = useState(
-    "All Vinciguerra Lupo Cartel members must log weekly tributes before Sunday rollover."
-  );
-  const [ctaText, setCtaText] = useState("Open Family Tax Portal");
-  const [ctaUrl, setCtaUrl] = useState(
-    "https://3pixelpacket3.github.io/fifth-family-tracker/"
-  );
-  const [copiedSingleLine, setCopiedSingleLine] = useState(false);
-
-  // Week & Treasury / Tax Bracket Settings
+  // Week Rollover, Treasury & Level Tax Bracket Settings (Available to BOTH App Developer and Don)
   const [newWeekDate, setNewWeekDate] = useState(activeWeekStart);
   const [treasuryInput, setTreasuryInput] = useState(String(baseTreasury));
   const [bracketLevel, setBracketLevel] = useState("50");
   const [bracketAmount, setBracketAmount] = useState("4000000");
+
+  // Individual Member Tax Assignment (Available to BOTH App Developer and Don)
+  const [selectedMemberForTax, setSelectedMemberForTax] = useState("");
+  const [memberTaxValue, setMemberTaxValue] = useState("");
+
   const [toast, setToast] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -79,27 +75,63 @@ export default function AdminCommandView({
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Approve or Reject Pending User Account
+  // Approve Pending Online Account & Optionally Link/Assign to an Existing Created Roster Member
   const handleApproveUser = async (
-    profile: Profile,
+    pendingAcct: Profile,
     assignRank: MemberRank = "Soldier"
   ) => {
+    const linkedRosterId = linkSelections[pendingAcct.id] || "";
+
+    if (linkedRosterId) {
+      // Link this online user's UID/email directly onto the existing created roster member
+      const existingMember = approvedMembers.find(
+        (m) => m.id === linkedRosterId
+      );
+      if (existingMember) {
+        const mergedMember: Profile = {
+          ...existingMember,
+          uid: pendingAcct.uid || pendingAcct.id,
+          email: pendingAcct.email || existingMember.email,
+          rank: assignRank === "Don" ? "Don" : existingMember.rank,
+          role:
+            assignRank === "Don" || existingMember.rank === "Don"
+              ? "Admin"
+              : "User",
+          approval_status: "approved",
+        };
+        await saveProfileToCloud(mergedMember);
+        // Also mark the online auth doc approved and linked to existingMember.id
+        if (pendingAcct.id !== existingMember.id) {
+          await deleteProfileFromCloud(pendingAcct.id);
+          await saveProfileToCloud({
+            ...mergedMember,
+            id: pendingAcct.id,
+            linked_member_id: existingMember.id,
+          });
+        }
+        showToast(
+          `Assigned ${pendingAcct.email || pendingAcct.game_name} to roster member ${existingMember.game_name}!`
+        );
+        return;
+      }
+    }
+
     const updated: Profile = {
-      ...profile,
+      ...pendingAcct,
       rank: assignRank,
       role: assignRank === "Don" ? "Admin" : "User",
       approval_status: "approved",
     };
     await saveProfileToCloud(updated);
-    showToast(`Approved ${profile.game_name} as ${assignRank}.`);
+    showToast(`Approved ${pendingAcct.game_name} (${assignRank}).`);
   };
 
   const handleRejectUser = async (profile: Profile) => {
     await deleteProfileFromCloud(profile.id);
-    showToast(`Removed pending request from ${profile.game_name}.`);
+    showToast(`Declined and removed request from ${profile.game_name}.`);
   };
 
-  // Master Admin: Appoint or Change the Family Don from existing users
+  // Appoint or Change the Family Don from existing approved members
   const handleSetDon = async (memberId: string) => {
     const target = approvedMembers.find((m) => m.id === memberId);
     if (!target) return;
@@ -111,20 +143,43 @@ export default function AdminCommandView({
     showToast(`${target.game_name} has been appointed as Family Don.`);
   };
 
-  // Save Custom HTML/CSS Welcome Banner
+  // Assign an Already-Approved Online Account to a Created Roster Member
+  const handleAssignMemberTax = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMemberForTax) return;
+    const target = approvedMembers.find((m) => m.id === selectedMemberForTax);
+    if (!target) return;
+
+    const customTaxVal =
+      memberTaxValue.trim() !== ""
+        ? Math.max(0, parseFloat(memberTaxValue) || 0)
+        : null;
+
+    await saveProfileToCloud({
+      ...target,
+      custom_tax_override: customTaxVal,
+    });
+    showToast(
+      customTaxVal !== null
+        ? `Set ${target.game_name}'s tax rate to ${formatCartelCurrency(
+            customTaxVal,
+            true
+          )}.`
+        : `Reset ${target.game_name} to automatic Level Bracket tax.`
+    );
+    setMemberTaxValue("");
+  };
+
+  // Save Custom HTML/CSS Welcome Banner (Strictly App Developer oharajoshua333@gmail.com only)
   const handleSaveWelcomeHtml = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isMasterAdmin) return;
     await saveMetaToCloud({ welcomeHtml: customWelcomeCode });
     setWelcomeSaved(true);
     setTimeout(() => setWelcomeSaved(false), 3000);
   };
 
-  // Generate Single-Line HTML/CSS Popup (0 line breaks, target='_blank')
-  const singleLinePopupCode = `<div style="box-sizing:border-box;width:100%;max-width:420px;margin:0 auto;padding:16px;background:#12141d;border:1px solid #d4af37;border-radius:14px;color:#f8fafc;font-family:system-ui,sans-serif;"><div style="font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:#d4af37;font-weight:700;margin-bottom:6px;">THE FIFTH FAMILY • VINCIGUERRA LUPO</div><h3 style="margin:0 0 6px 0;font-size:15px;font-weight:800;color:#ffffff;">${popupTitle.replace(/[\r\n]+/g, " ").trim()}</h3><p style="margin:0 0 12px 0;font-size:12px;line-height:1.45;color:#cbd5e1;">${popupBody.replace(/[\r\n]+/g, " ").trim()}</p><a href="${ctaUrl.replace(/[\r\n]+/g, "").trim()}" target="_blank" rel="noopener noreferrer" style="display:block;width:100%;box-sizing:border-box;text-align:center;padding:9px 12px;background:#d4af37;color:#090a0f;font-weight:800;font-size:11px;text-transform:uppercase;text-decoration:none;border-radius:8px;">${ctaText.replace(/[\r\n]+/g, " ").trim()} &#8599;</a></div>`.replace(
-    /[\r\n]+/g,
-    ""
-  );
-
+  // Available to both App Developer and Don
   const handleSaveCycleAndTreasury = async (e: React.FormEvent) => {
     e.preventDefault();
     const numericTreasury = Math.max(0, parseFloat(treasuryInput) || 0);
@@ -140,6 +195,7 @@ export default function AdminCommandView({
     );
   };
 
+  // Available to both App Developer and Don
   const handleSaveBracket = async (e: React.FormEvent) => {
     e.preventDefault();
     const minLvl = Math.max(1, parseInt(bracketLevel, 10) || 1);
@@ -150,7 +206,7 @@ export default function AdminCommandView({
       bracket_label: `Lv ${minLvl}+ (${formatCartelCurrency(amt, true)})`,
     });
     showToast(
-      `Saved Tax Bracket: Lv.${minLvl}+ -> ${formatCartelCurrency(amt, true)}`
+      `Saved Level Bracket: Lv.${minLvl}+ -> ${formatCartelCurrency(amt, true)}`
     );
   };
 
@@ -159,11 +215,11 @@ export default function AdminCommandView({
       <div className="rounded-2xl border border-cartel-border bg-cartel-card p-6 text-center space-y-2">
         <Crown className="w-7 h-7 text-amber-400 mx-auto" />
         <h2 className="text-sm font-bold text-white uppercase">
-          Admin &amp; Don Restricted Area
+          App Developer &amp; Don Command Area
         </h2>
         <p className="text-xs text-slate-400">
-          Only the Master Admin ({MASTER_ADMIN_EMAIL}) or an appointed Family
-          Don can approve accounts and edit system settings.
+          Your account is in Member View-Only mode. Only the App Developer (
+          {MASTER_ADMIN_EMAIL}) or the Family Don can modify settings.
         </p>
       </div>
     );
@@ -178,17 +234,17 @@ export default function AdminCommandView({
         </div>
       )}
 
-      {/* BLOCK 1: Account Approval Queue & Appoint Don (<= 564px) */}
+      {/* BLOCK 1: Account Approvals, Profile Linking & Don Appointment (<= 564px) */}
       <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-amber-500/40 bg-cartel-card p-4 shadow-xl space-y-3">
         <div className="flex items-center justify-between border-b border-cartel-border pb-2.5">
           <div className="flex items-center gap-2">
             <UserCheck className="w-4 h-4 text-amber-400" />
             <div>
               <h2 className="text-xs font-bold uppercase tracking-wider text-amber-300">
-                Account Approvals &amp; Don Appointment
+                Account Approvals &amp; Roster Profile Assignment
               </h2>
               <p className="text-[11px] text-slate-400">
-                New signups require review by {MASTER_ADMIN_EMAIL} or the Don
+                Approve new signups or link them to an existing created member
               </p>
             </div>
           </div>
@@ -199,25 +255,60 @@ export default function AdminCommandView({
 
         {pendingAccounts.length === 0 ? (
           <div className="py-3 text-xs text-slate-400 text-center bg-cartel-surface/60 rounded-xl border border-cartel-border/60">
-            No pending account requests waiting for review.
+            No pending account signups waiting for review.
           </div>
         ) : (
           <div className="space-y-2">
-            {pendingAccounts.slice(0, 4).map((acct) => (
+            {pendingAccounts.slice(0, 3).map((acct) => (
               <div
                 key={acct.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-cartel-surface border border-amber-500/30 p-2.5 text-xs"
+                className="rounded-xl bg-cartel-surface border border-amber-500/30 p-2.5 text-xs space-y-2"
               >
-                <div>
-                  <p className="font-bold text-white">
-                    {acct.game_name}{" "}
-                    <span className="text-amber-300 font-normal">
-                      (Lv.{acct.level})
-                    </span>
-                  </p>
-                  <p className="text-[11px] text-slate-400">{acct.email}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="font-bold text-white">
+                      {acct.game_name}{" "}
+                      <span className="text-amber-300 font-normal">
+                        (Lv.{acct.level})
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-slate-400">{acct.email}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRejectUser(acct)}
+                    className="p-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-pointer"
+                    title="Reject Account"
+                  >
+                    <UserX className="w-4 h-4" />
+                  </button>
                 </div>
-                <div className="flex items-center gap-1.5">
+
+                {/* Assign to Created Roster Member Dropdown + Approve Buttons */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-cartel-border/60">
+                  <div className="flex items-center gap-1 flex-1 min-w-[160px]">
+                    <Link2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <select
+                      value={linkSelections[acct.id] || ""}
+                      onChange={(e) =>
+                        setLinkSelections((prev) => ({
+                          ...prev,
+                          [acct.id]: e.target.value,
+                        }))
+                      }
+                      className="w-full rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-[11px] text-slate-200"
+                    >
+                      <option value="">
+                        Create as new member ({acct.game_name})
+                      </option>
+                      {approvedMembers.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          Assign to created member: {m.game_name} ({m.rank})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => handleApproveUser(acct, "Soldier")}
@@ -231,24 +322,16 @@ export default function AdminCommandView({
                       onClick={() => handleApproveUser(acct, "Don")}
                       className="rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-2.5 py-1 text-xs cursor-pointer"
                     >
-                      Approve as Don
+                      Make Don
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => handleRejectUser(acct)}
-                    className="p-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-pointer"
-                    title="Reject Account"
-                  >
-                    <UserX className="w-4 h-4" />
-                  </button>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* Master Admin: Promote any Approved User to Don */}
+        {/* Appoint Don from Created Roster Members */}
         {isMasterAdmin && approvedMembers.length > 0 && (
           <div className="flex items-center justify-between gap-2 pt-2 border-t border-cartel-border text-xs">
             <span className="text-slate-300 font-semibold flex items-center gap-1.5">
@@ -275,52 +358,10 @@ export default function AdminCommandView({
         )}
       </section>
 
-      {/* BLOCK 2: Custom HTML/CSS Welcome Banner Designer (Master Admin oharajoshua333@gmail.com) */}
-      <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-cartel-border bg-cartel-card p-4 shadow-xl space-y-2.5">
-        <div className="flex items-center justify-between border-b border-cartel-border pb-2">
-          <div className="flex items-center gap-2">
-            <Code2 className="w-4 h-4 text-amber-400" />
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-                Custom HTML/CSS Welcome Message Designer
-              </h3>
-              <p className="text-[11px] text-slate-400">
-                Renders at the top of the app for all approved family members
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <form onSubmit={handleSaveWelcomeHtml} className="space-y-2">
-          <textarea
-            rows={3}
-            value={customWelcomeCode}
-            onChange={(e) => setCustomWelcomeCode(e.target.value)}
-            placeholder="Paste custom HTML/CSS welcome banner code here..."
-            className="w-full rounded-xl bg-cartel-bg border border-cartel-border p-2.5 text-xs font-mono text-amber-200 focus:outline-none focus:border-amber-400"
-          />
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => setCustomWelcomeCode("")}
-              className="text-[11px] text-slate-400 hover:text-rose-300 underline cursor-pointer"
-            >
-              Clear Banner
-            </button>
-            <button
-              type="submit"
-              className="rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-1.5 text-xs uppercase tracking-wider cursor-pointer"
-            >
-              {welcomeSaved ? "Saved Welcome Banner!" : "Publish Welcome Code"}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      {/* BLOCK 3: Treasury, Sunday Rollover & Single-Line Popup Code (<= 564px) */}
+      {/* BLOCK 2: Week Rollover & Treasury + Level Tax Brackets + Member Tax Control (Available to BOTH App Developer and Don) */}
       <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-cartel-border bg-cartel-card p-4 shadow-xl space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Active Week & Treasury Setter */}
+          {/* Week Rollover & Treasury (Available to App Developer & Don) */}
           <form
             onSubmit={handleSaveCycleAndTreasury}
             className="rounded-xl bg-cartel-surface border border-cartel-border p-3 space-y-2"
@@ -361,7 +402,7 @@ export default function AdminCommandView({
             </button>
           </form>
 
-          {/* Level Tax Bracket Setter */}
+          {/* Level Tax Brackets (Available to App Developer & Don) */}
           <form
             onSubmit={handleSaveBracket}
             className="rounded-xl bg-cartel-surface border border-cartel-border p-3 space-y-2"
@@ -402,42 +443,109 @@ export default function AdminCommandView({
           </form>
         </div>
 
-        {/* Single-Line HTML/CSS Alert Generator */}
-        <div className="border-t border-cartel-border pt-2.5 space-y-1.5">
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="font-bold text-slate-300">
-              In-Game 1-Line HTML Popup Code (`target=&apos;_blank&apos;`)
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(singleLinePopupCode);
-                setCopiedSingleLine(true);
-                setTimeout(() => setCopiedSingleLine(false), 2500);
-              }}
-              className="text-amber-300 hover:text-amber-200 font-bold flex items-center gap-1 cursor-pointer"
+        {/* Set Specific Tax Rate for Any Individual Member (Available to App Developer & Don) */}
+        {approvedMembers.length > 0 && (
+          <form
+            onSubmit={handleAssignMemberTax}
+            className="rounded-xl bg-cartel-surface border border-cartel-border p-3 space-y-2"
+          >
+            <div className="text-[11px] font-bold uppercase tracking-wider text-sky-300">
+              Set Tax Rate for Individual Member
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <select
+                required
+                value={selectedMemberForTax}
+                onChange={(e) => setSelectedMemberForTax(e.target.value)}
+                className="rounded-lg bg-cartel-bg border border-cartel-border px-2.5 py-1.5 text-xs text-white"
+              >
+                <option value="">Select Member...</option>
+                {approvedMembers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.game_name} (Lv.{m.level} {m.rank})
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min={0}
+                step="any"
+                value={memberTaxValue}
+                onChange={(e) => setMemberTaxValue(e.target.value)}
+                placeholder="Custom Tax $ (blank = auto)"
+                className="rounded-lg bg-cartel-bg border border-cartel-border px-2.5 py-1.5 text-xs text-amber-300"
+              />
+              <button
+                type="submit"
+                className="rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 py-1.5 px-3 text-xs font-bold cursor-pointer"
+              >
+                Apply Member Tax
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Active Tax Bracket Strip */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px]">
+          {taxLogic.map((tier) => (
+            <div
+              key={tier.min_level}
+              className="shrink-0 rounded-lg bg-cartel-bg/90 border border-cartel-border px-2.5 py-1 flex items-center gap-1.5"
             >
-              {copiedSingleLine ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Copied 1-Line HTML</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy 1-Line Code</span>
-                </>
-              )}
-            </button>
-          </div>
-          <input
-            type="text"
-            readOnly
-            value={singleLinePopupCode}
-            className="w-full rounded-lg bg-cartel-bg border border-cartel-border px-2.5 py-1.5 text-[11px] font-mono text-amber-200 select-all"
-          />
+              <span className="text-slate-400">Lv.{tier.min_level}+:</span>
+              <span className="font-bold text-amber-300">
+                {formatCartelCurrency(tier.expected_tax, true)}
+              </span>
+            </div>
+          ))}
         </div>
       </section>
+
+      {/* BLOCK 3: Custom HTML/CSS Welcome Message Designer (Strictly App Developer oharajoshua333@gmail.com ONLY) */}
+      {isMasterAdmin && (
+        <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-emerald-500/30 bg-cartel-card p-4 shadow-xl space-y-2.5">
+          <div className="flex items-center justify-between border-b border-cartel-border pb-2">
+            <div className="flex items-center gap-2">
+              <Code2 className="w-4 h-4 text-emerald-400" />
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-300">
+                  Custom HTML/CSS Welcome Message Designer (App Developer Only)
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Exclusive to {MASTER_ADMIN_EMAIL} • Renders at top of Roster tab
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveWelcomeHtml} className="space-y-2">
+            <textarea
+              rows={3}
+              value={customWelcomeCode}
+              onChange={(e) => setCustomWelcomeCode(e.target.value)}
+              placeholder="Paste custom HTML/CSS welcome banner code here..."
+              className="w-full rounded-xl bg-cartel-bg border border-cartel-border p-2.5 text-xs font-mono text-amber-200 focus:outline-none focus:border-amber-400"
+            />
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setCustomWelcomeCode("")}
+                className="text-[11px] text-slate-400 hover:text-rose-300 underline cursor-pointer"
+              >
+                Clear Banner
+              </button>
+              <button
+                type="submit"
+                className="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-1.5 text-xs uppercase tracking-wider cursor-pointer"
+              >
+                {welcomeSaved
+                  ? "Saved Welcome Banner!"
+                  : "Publish Welcome Code"}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
     </div>
   );
 }

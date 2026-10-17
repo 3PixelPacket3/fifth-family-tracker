@@ -99,15 +99,19 @@ export async function ensureUserProfile(
   }
 
   if (existing) {
-    // Upgrade master admin automatically if needed
+    // Upgrade master admin (App Developer) automatically if needed
     if (
       isMaster &&
-      (existing.role !== "Admin" || existing.approval_status !== "approved")
+      (existing.role !== "Admin" ||
+        existing.approval_status !== "approved" ||
+        existing.rank !== "App Developer")
     ) {
       const upgraded: Profile = {
         ...existing,
+        rank: "App Developer",
         role: "Admin",
         approval_status: "approved",
+        is_exempt: true,
       };
       await saveProfileToCloud(upgraded);
       return upgraded;
@@ -127,10 +131,11 @@ export async function ensureUserProfile(
     uid: user.uid,
     email: user.email || "",
     game_name: fallbackName,
-    rank: isMaster ? "Don" : "Associate",
+    rank: isMaster ? "App Developer" : "Associate",
     level: requestedLevel && requestedLevel >= 1 ? requestedLevel : 1,
     role: isMaster ? "Admin" : "User",
     approval_status: isMaster ? "approved" : "pending",
+    is_exempt: isMaster ? true : false,
     joined_at: new Date().toISOString().slice(0, 10),
   };
 

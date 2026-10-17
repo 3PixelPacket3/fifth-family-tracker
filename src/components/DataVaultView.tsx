@@ -6,7 +6,6 @@ import {
   calculateMemberExpectedTax,
   formatCartelCurrency,
   MemberRank,
-  Profile,
 } from "@/store/useCartelStore";
 import {
   saveProfileToCloud,
@@ -22,9 +21,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
+  Eye,
 } from "lucide-react";
 
-export default function DataVaultView() {
+interface DataVaultViewProps {
+  isAdminOrDon: boolean;
+}
+
+export default function DataVaultView({ isAdminOrDon }: DataVaultViewProps) {
   const {
     profiles,
     taxLogic,
@@ -33,7 +37,7 @@ export default function DataVaultView() {
   } = useCartelStore();
 
   const approvedProfiles = profiles.filter(
-    (p) => p.approval_status === "approved"
+    (p) => p.approval_status === "approved" && p.rank !== "App Developer"
   );
 
   const [selectedMonth, setSelectedMonth] = useState(
@@ -91,8 +95,9 @@ export default function DataVaultView() {
     (safePage + 1) * ROWS_PER_PAGE
   );
 
-  // Blank-Safe CSV Export (unavailable fields left strictly empty "")
+  // Blank-Safe CSV Export (Admin & Don only)
   const handleExportCSV = () => {
+    if (!isAdminOrDon) return;
     const headers = [
       "game_name",
       "rank",
@@ -144,10 +149,10 @@ export default function DataVaultView() {
     URL.revokeObjectURL(url);
   };
 
-  // CSV Bulk Import
+  // CSV Bulk Import (Admin & Don only)
   const handleBulkImport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!csvText.trim()) return;
+    if (!isAdminOrDon || !csvText.trim()) return;
 
     const rawLines = csvText
       .trim()
@@ -244,7 +249,7 @@ export default function DataVaultView() {
 
   return (
     <div className="w-full space-y-4">
-      {/* BLOCK 1: Data Vault Ledger (<= 564px) */}
+      {/* BLOCK 1: Data Vault Ledger (<= 564px, View-Only for Standard Members) */}
       <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-cartel-border bg-cartel-card p-4 shadow-xl flex flex-col justify-between">
         <div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cartel-border pb-2.5">
@@ -254,6 +259,12 @@ export default function DataVaultView() {
                 <h2 className="text-xs font-bold uppercase tracking-wider text-amber-300">
                   Data Vault — Monthly &amp; Total Overall Ledger
                 </h2>
+                {!isAdminOrDon && (
+                  <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-cartel-border">
+                    <Eye className="w-3 h-3 text-amber-400" />
+                    <span>View Only</span>
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5">
                 Month ({selectedMonth}):{" "}
@@ -293,14 +304,14 @@ export default function DataVaultView() {
 
           <div className="grid grid-cols-12 gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 pt-2.5 pb-1 border-b border-cartel-border/60">
             <div className="col-span-4">Member</div>
-            <div className="col-span-2 text-right">Tax</div>
+            <div className="col-span-2 text-right">Tax Rate</div>
             <div className="col-span-3 text-right">Monthly</div>
-            <div className="col-span-3 text-right">Total Overall</div>
+            <div className="col-span-3 text-right">Total Paid</div>
           </div>
 
           {visibleRows.length === 0 ? (
             <div className="py-8 text-center text-xs text-slate-400">
-              No member records yet. Add members in the Roster tab or bulk import CSV below.
+              No member records in the Data Vault yet.
             </div>
           ) : (
             <div className="divide-y divide-cartel-border/50 my-1">
@@ -333,14 +344,20 @@ export default function DataVaultView() {
         </div>
 
         <div className="flex items-center justify-between border-t border-cartel-border pt-2.5 gap-2">
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
-          </button>
+          {isAdminOrDon ? (
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export CSV</span>
+            </button>
+          ) : (
+            <span className="text-[11px] text-slate-400">
+              Showing {visibleRows.length} of {analyticalRows.length} family members
+            </span>
+          )}
 
           <div className="flex items-center gap-1.5 text-xs text-slate-400">
             <button
@@ -368,59 +385,61 @@ export default function DataVaultView() {
         </div>
       </section>
 
-      {/* BLOCK 2: CSV Bulk Load (<= 564px) */}
-      <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-cartel-border bg-cartel-card p-4 shadow-xl space-y-2.5">
-        <div className="flex items-center justify-between border-b border-cartel-border pb-2">
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-              CSV Bulk Load &amp; Spreadsheet Suffix Helper
-            </h3>
-          </div>
-          <button
-            type="button"
-            onClick={copySpreadsheetFormula}
-            className="rounded-lg bg-cartel-surface border border-cartel-border px-2.5 py-1 text-[11px] font-mono text-amber-300 flex items-center gap-1 cursor-pointer"
-          >
-            {suffixFormulaCopied ? (
-              <>
-                <Check className="w-3 h-3 text-emerald-400" />
-                <span>Copied =A2&amp;&apos;-1&apos;</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3 h-3" />
-                <span>=A2&amp;&apos;-1&apos;</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        <form onSubmit={handleBulkImport} className="space-y-2">
-          <textarea
-            rows={3}
-            value={csvText}
-            onChange={(e) => setCsvText(e.target.value)}
-            placeholder={`game_name,rank,level,amount_paid\nMemberName,Soldier,55,4000000`}
-            className="w-full rounded-xl bg-cartel-bg border border-cartel-border p-2.5 text-xs font-mono text-slate-200 placeholder-slate-500"
-          />
-          <div className="flex justify-end">
+      {/* BLOCK 2: CSV Bulk Load (Strictly Admin / App Developer & Don Only) */}
+      {isAdminOrDon && (
+        <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-cartel-border bg-cartel-card p-4 shadow-xl space-y-2.5">
+          <div className="flex items-center justify-between border-b border-cartel-border pb-2">
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                CSV Bulk Load &amp; Spreadsheet Suffix Helper
+              </h3>
+            </div>
             <button
-              type="submit"
-              className="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-1.5 text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+              type="button"
+              onClick={copySpreadsheetFormula}
+              className="rounded-lg bg-cartel-surface border border-cartel-border px-2.5 py-1 text-[11px] font-mono text-amber-300 flex items-center gap-1 cursor-pointer"
             >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Import CSV Rows</span>
+              {suffixFormulaCopied ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  <span>Copied =A2&amp;&apos;-1&apos;</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" />
+                  <span>=A2&amp;&apos;-1&apos;</span>
+                </>
+              )}
             </button>
           </div>
-        </form>
 
-        {importStatus && (
-          <div className="rounded-lg bg-emerald-500/15 border border-emerald-500/40 px-3 py-1.5 text-xs text-emerald-300">
-            {importStatus}
-          </div>
-        )}
-      </section>
+          <form onSubmit={handleBulkImport} className="space-y-2">
+            <textarea
+              rows={3}
+              value={csvText}
+              onChange={(e) => setCsvText(e.target.value)}
+              placeholder={`game_name,rank,level,amount_paid\nMemberName,Soldier,55,4000000`}
+              className="w-full rounded-xl bg-cartel-bg border border-cartel-border p-2.5 text-xs font-mono text-slate-200 placeholder-slate-500"
+            />
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-1.5 text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Import CSV Rows</span>
+              </button>
+            </div>
+          </form>
+
+          {importStatus && (
+            <div className="rounded-lg bg-emerald-500/15 border border-emerald-500/40 px-3 py-1.5 text-xs text-emerald-300">
+              {importStatus}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }
