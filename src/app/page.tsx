@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import {
   useCartelStore,
   formatCartelCurrency,
+  getEffectivePermissions,
   Profile,
 } from "@/store/useCartelStore";
 import {
@@ -36,6 +37,7 @@ export default function CartelTrackerApp() {
     profiles,
     baseTreasury,
     activeWeekStart,
+    rankPermissions,
   } = useCartelStore();
 
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
@@ -63,7 +65,6 @@ export default function CartelTrackerApp() {
       setAuthChecking(false);
     });
 
-    // Cross-tab storage sync
     const handleStorageSync = (e: StorageEvent) => {
       if (e.key === "vinciguerra-lupo-clean-vault-v2") {
         useCartelStore.persist.rehydrate();
@@ -78,17 +79,30 @@ export default function CartelTrackerApp() {
     };
   }, []);
 
-  // Keep userProfile in sync when profiles array updates (e.g. when approved)
+  // Resolve user's effective profile (if linked to a created roster profile, inherit that rank/status)
   useEffect(() => {
     if (!firebaseUser) return;
-    const match = profiles.find(
+    const directMatch = profiles.find(
       (p) =>
         p.id === firebaseUser.uid ||
         (firebaseUser.email &&
           p.email?.toLowerCase() === firebaseUser.email.toLowerCase())
     );
-    if (match) {
-      setUserProfile(match);
+    if (directMatch) {
+      if (directMatch.linked_member_id) {
+        const linked = profiles.find(
+          (p) => p.id === directMatch.linked_member_id
+        );
+        if (linked) {
+          setUserProfile({
+            ...linked,
+            linked_member_id: linked.id,
+            approval_status: "approved",
+          });
+          return;
+        }
+      }
+      setUserProfile(directMatch);
     }
   }, [profiles, firebaseUser]);
 
@@ -115,12 +129,8 @@ export default function CartelTrackerApp() {
   }
 
   const isMasterAdmin = isMasterAdminEmail(firebaseUser.email);
-  const isAdminOrDon =
-    isMasterAdmin ||
-    userProfile.role === "Admin" ||
-    userProfile.rank === "Don";
 
-  // 2. Logged In, But Account Not Approved Yet (and not Master Admin oharajoshua333@gmail.com)
+  // 2. Logged In, But Account Not Approved Yet
   if (!isMasterAdmin && userProfile.approval_status !== "approved") {
     return (
       <PendingApprovalScreen
@@ -133,11 +143,24 @@ export default function CartelTrackerApp() {
     );
   }
 
+  // Resolve effective permissions based on user's Rank (App Developer, Don, Underboss, Capo, Soldier, Associate)
+  const effectivePermissions = getEffectivePermissions(
+    isMasterAdmin ? "App Developer" : userProfile.rank,
+    isMasterAdmin,
+    rankPermissions
+  );
+
+  const canAccessAdminTab =
+    effectivePermissions.isFullCommand ||
+    effectivePermissions.manageMembers ||
+    effectivePermissions.manageRolloverTreasury ||
+    effectivePermissions.manageTaxBrackets ||
+    effectivePermissions.manageIndividualTax;
+
   const pendingApprovalsCount = profiles.filter(
     (p) => p.approval_status === "pending"
   ).length;
 
-  // 3. Approved Member or Admin / Don Application Portal
   return (
     <div className="min-h-screen bg-cartel-bg text-slate-100 pb-24">
       {/* Sticky Top Header */}
@@ -188,26 +211,33 @@ export default function CartelTrackerApp() {
         {activeTab === "dashboard" && (
           <WeeklyDashboardView
             currentUserProfile={userProfile}
-            isAdminOrDon={isAdminOrDon}
+            permissions={effectivePermissions}
           />
         )}
-        {activeTab === "vault" && <DataVaultView isAdminOrDon={isAdminOrDon} />}
-        {activeTab === "admin" && isAdminOrDon && (
+        {activeTab === "vault" && (
+          <DataVaultView
+            canExportVault={
+              effectivePermissions.isFullCommand ||
+              effectivePermissions.manageMembers
+            }
+          />
+        )}
+        {activeTab === "admin" && canAccessAdminTab && (
           <AdminCommandView
             isMasterAdmin={isMasterAdmin}
-            isAdminOrDon={isAdminOrDon}
+            permissions={effectivePermissions}
           />
         )}
       </main>
 
-      {/* Bottom Navigation Dock (2 View-Only tabs for Standard Members; 3 tabs for App Developer & Don) */}
+      {/* Bottom Navigation Dock */}
       <nav
         aria-label="Primary Navigation"
         className="fixed bottom-0 inset-x-0 z-30 border-t border-cartel-border bg-cartel-surface/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)]"
       >
         <div
           className={`w-full max-w-md md:max-w-2xl mx-auto px-4 py-2 grid gap-2 ${
-            isAdminOrDon ? "grid-cols-3" : "grid-cols-2"
+            canAccessAdminTab ? "grid-cols-3" : "grid-cols-2"
           }`}
         >
           <button
@@ -236,7 +266,7 @@ export default function CartelTrackerApp() {
             <span>Data Vault</span>
           </button>
 
-          {isAdminOrDon && (
+          {canAccessAdminTab && (
             <button
               type="button"
               onClick={() => setActiveTab("admin")}
@@ -247,12 +277,14 @@ export default function CartelTrackerApp() {
               }`}
             >
               <ShieldCheck className="w-4 h-4 mb-0.5" />
-              <span>Admin &amp; Don</span>
-              {pendingApprovalsCount > 0 && (
-                <span className="absolute top-1 right-3 px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-rose-500 text-white">
-                  {pendingApprovalsCount}
-                </span>
-              )}
+              <span>Command</span>
+              {(effectivePermissions.isFullCommand ||
+                effectivePermissions.manageMembers) &&
+                pendingApprovalsCount > 0 && (
+                  <span className="absolute top-1 right-3 px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-rose-500 text-white">
+                    {pendingApprovalsCount}
+                  </span>
+                )}
             </button>
           )}
         </div>

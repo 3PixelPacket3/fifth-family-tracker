@@ -174,17 +174,20 @@ export async function saveContributionToCloud(rec: WeeklyContribution) {
   }
 }
 
-// Save Metadata (Treasury balance, Active Week, Custom Welcome HTML)
+// Save Metadata (Treasury balance, Active Week, Custom Welcome HTML, Rank Permissions)
 export async function saveMetaToCloud(meta: {
   baseTreasury?: number;
   activeWeekStart?: string;
   welcomeHtml?: string;
+  rankPermissions?: import("@/store/useCartelStore").RankPermissionsMap;
 }) {
   const store = useCartelStore.getState();
   if (meta.baseTreasury !== undefined) store.setBaseTreasury(meta.baseTreasury);
   if (meta.activeWeekStart !== undefined)
     store.setActiveWeekStart(meta.activeWeekStart);
   if (meta.welcomeHtml !== undefined) store.setWelcomeHtml(meta.welcomeHtml);
+  if (meta.rankPermissions !== undefined)
+    store.setRankPermissionsLocal(meta.rankPermissions);
 
   try {
     await setDoc(
@@ -195,6 +198,8 @@ export async function saveMetaToCloud(meta: {
         active_week_start:
           meta.activeWeekStart ?? useCartelStore.getState().activeWeekStart,
         welcome_html: meta.welcomeHtml ?? useCartelStore.getState().welcomeHtml,
+        rank_permissions:
+          meta.rankPermissions ?? useCartelStore.getState().rankPermissions,
         updated_at: new Date().toISOString(),
       },
       { merge: true }
@@ -268,6 +273,9 @@ export function subscribeToCartelFirestore(): () => void {
               useCartelStore.getState().activeWeekStart,
             welcomeHtml:
               data.welcome_html ?? useCartelStore.getState().welcomeHtml,
+            rankPermissions:
+              data.rank_permissions ??
+              useCartelStore.getState().rankPermissions,
           });
         }
       },

@@ -147,14 +147,35 @@ export default function LandingAuthScreen() {
             </button>
           </div>
 
-          {/* Google Sign-In Button */}
+          {/* Google Sign-In Button with Official Multicolor Google Logo */}
           <button
             type="button"
             disabled={loading}
             onClick={handleGoogleAuth}
-            className="w-full rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold py-2.5 px-4 text-xs flex items-center justify-center gap-2 transition shadow cursor-pointer disabled:opacity-50"
+            className="w-full rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold py-2.5 px-4 text-xs flex items-center justify-center gap-2.5 transition shadow cursor-pointer disabled:opacity-50"
           >
-            <Chrome className="w-4 h-4 text-blue-600" />
+            <svg
+              className="w-4 h-4 shrink-0"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                fill="#4285F4"
+                d="M23.49 12.275c0-.845-.075-1.66-.215-2.44H12v4.615h6.445c-.275 1.495-1.12 2.765-2.385 3.615v3.005h3.86c2.26-2.08 3.57-5.145 3.57-8.795z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 24c3.24 0 5.955-1.075 7.94-2.91l-3.86-3.005c-1.075.72-2.45 1.145-4.08 1.145-3.135 0-5.79-2.115-6.735-4.96H1.275v3.1C3.25 21.3 7.31 24 12 24z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.265 14.27C5.025 13.55 4.89 12.785 4.89 12s.135-1.55.375-2.27V6.63H1.275C.465 8.245 0 10.065 0 12s.465 3.755 1.275 5.37l3.99-3.1z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 4.77c1.76 0 3.34.605 4.585 1.795l3.44-3.44C17.95 1.19 15.235 0 12 0 7.31 0 3.25 2.7 1.275 6.63l3.99 3.1c.945-2.845 3.6-4.96 6.735-4.96z"
+              />
+            </svg>
             <span>Continue with Google</span>
           </button>
 

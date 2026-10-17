@@ -5,19 +5,10 @@ import {
   useCartelStore,
   calculateMemberExpectedTax,
   formatCartelCurrency,
-  MemberRank,
 } from "@/store/useCartelStore";
-import {
-  saveProfileToCloud,
-  saveContributionToCloud,
-} from "@/lib/firebase";
 import {
   Database,
   Download,
-  Upload,
-  FileSpreadsheet,
-  Copy,
-  Check,
   ChevronLeft,
   ChevronRight,
   Search,
@@ -25,10 +16,10 @@ import {
 } from "lucide-react";
 
 interface DataVaultViewProps {
-  isAdminOrDon: boolean;
+  canExportVault: boolean;
 }
 
-export default function DataVaultView({ isAdminOrDon }: DataVaultViewProps) {
+export default function DataVaultView({ canExportVault }: DataVaultViewProps) {
   const {
     profiles,
     taxLogic,
@@ -46,10 +37,6 @@ export default function DataVaultView({ isAdminOrDon }: DataVaultViewProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [vaultPage, setVaultPage] = useState(0);
   const ROWS_PER_PAGE = 5;
-
-  const [csvText, setCsvText] = useState("");
-  const [suffixFormulaCopied, setSuffixFormulaCopied] = useState(false);
-  const [importStatus, setImportStatus] = useState<string | null>(null);
 
   const analyticalRows = approvedProfiles
     .filter((p) =>
@@ -95,9 +82,9 @@ export default function DataVaultView({ isAdminOrDon }: DataVaultViewProps) {
     (safePage + 1) * ROWS_PER_PAGE
   );
 
-  // Blank-Safe CSV Export (Admin & Don only)
+  // Blank-Safe CSV Export
   const handleExportCSV = () => {
-    if (!isAdminOrDon) return;
+    if (!canExportVault) return;
     const headers = [
       "game_name",
       "rank",
@@ -149,95 +136,6 @@ export default function DataVaultView({ isAdminOrDon }: DataVaultViewProps) {
     URL.revokeObjectURL(url);
   };
 
-  // CSV Bulk Import (Admin & Don only)
-  const handleBulkImport = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isAdminOrDon || !csvText.trim()) return;
-
-    const rawLines = csvText
-      .trim()
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
-
-    if (rawLines.length === 0) return;
-
-    const firstLower = rawLines[0].toLowerCase();
-    const startIdx =
-      firstLower.includes("game_name") || firstLower.includes("name") ? 1 : 0;
-
-    let createdCount = 0;
-    let paymentCount = 0;
-
-    for (const line of rawLines.slice(startIdx)) {
-      const cols = line.split(",").map((c) => c.trim());
-      const game_name = cols[0] || "";
-      if (!game_name) continue;
-
-      const validRanks: MemberRank[] = [
-        "Don",
-        "Underboss",
-        "Capo",
-        "Soldier",
-        "Associate",
-      ];
-      const rank: MemberRank = validRanks.includes(cols[1] as MemberRank)
-        ? (cols[1] as MemberRank)
-        : "Soldier";
-      const level = cols[2] ? parseInt(cols[2], 10) || 50 : 50;
-      const amount_paid =
-        cols[3] !== undefined && cols[3] !== ""
-          ? parseFloat(cols[3].replace(/[^0-9.]/g, ""))
-          : undefined;
-      const week_start = cols[4] || activeWeekStart;
-
-      let member = useCartelStore
-        .getState()
-        .profiles.find(
-          (p) => p.game_name.toLowerCase() === game_name.toLowerCase()
-        );
-
-      if (!member) {
-        member = {
-          id: `member_csv_${Date.now()}_${createdCount}`,
-          game_name,
-          rank,
-          level,
-          role: rank === "Don" ? "Admin" : "User",
-          approval_status: "approved",
-          joined_at: new Date().toISOString().slice(0, 10),
-        };
-        await saveProfileToCloud(member);
-        createdCount++;
-      }
-
-      if (amount_paid !== undefined && !Number.isNaN(amount_paid)) {
-        const saved = useCartelStore
-          .getState()
-          .logPaymentLocal(member.id, amount_paid, "CSV Import", "set");
-        if (saved) {
-          await saveContributionToCloud({
-            ...saved,
-            week_start_date: week_start,
-          });
-          paymentCount++;
-        }
-      }
-    }
-
-    setImportStatus(
-      `Imported ${createdCount} members and ${paymentCount} payment records.`
-    );
-    setCsvText("");
-    setTimeout(() => setImportStatus(null), 4000);
-  };
-
-  const copySpreadsheetFormula = () => {
-    navigator.clipboard.writeText('=A2&"-1"');
-    setSuffixFormulaCopied(true);
-    setTimeout(() => setSuffixFormulaCopied(false), 2500);
-  };
-
   const grandTotalOverall = analyticalRows.reduce(
     (s, r) => s + r.totalOverall,
     0
@@ -249,7 +147,7 @@ export default function DataVaultView({ isAdminOrDon }: DataVaultViewProps) {
 
   return (
     <div className="w-full space-y-4">
-      {/* BLOCK 1: Data Vault Ledger (<= 564px, View-Only for Standard Members) */}
+      {/* Data Vault Ledger (<= 564px, View-Only for Standard Members) */}
       <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-cartel-border bg-cartel-card p-4 shadow-xl flex flex-col justify-between">
         <div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cartel-border pb-2.5">
@@ -259,7 +157,7 @@ export default function DataVaultView({ isAdminOrDon }: DataVaultViewProps) {
                 <h2 className="text-xs font-bold uppercase tracking-wider text-amber-300">
                   Data Vault — Monthly &amp; Total Overall Ledger
                 </h2>
-                {!isAdminOrDon && (
+                {!canExportVault && (
                   <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-cartel-border">
                     <Eye className="w-3 h-3 text-amber-400" />
                     <span>View Only</span>
@@ -344,7 +242,7 @@ export default function DataVaultView({ isAdminOrDon }: DataVaultViewProps) {
         </div>
 
         <div className="flex items-center justify-between border-t border-cartel-border pt-2.5 gap-2">
-          {isAdminOrDon ? (
+          {canExportVault ? (
             <button
               type="button"
               onClick={handleExportCSV}
@@ -384,62 +282,6 @@ export default function DataVaultView({ isAdminOrDon }: DataVaultViewProps) {
           </div>
         </div>
       </section>
-
-      {/* BLOCK 2: CSV Bulk Load (Strictly Admin / App Developer & Don Only) */}
-      {isAdminOrDon && (
-        <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-cartel-border bg-cartel-card p-4 shadow-xl space-y-2.5">
-          <div className="flex items-center justify-between border-b border-cartel-border pb-2">
-            <div className="flex items-center gap-2">
-              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-                CSV Bulk Load &amp; Spreadsheet Suffix Helper
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={copySpreadsheetFormula}
-              className="rounded-lg bg-cartel-surface border border-cartel-border px-2.5 py-1 text-[11px] font-mono text-amber-300 flex items-center gap-1 cursor-pointer"
-            >
-              {suffixFormulaCopied ? (
-                <>
-                  <Check className="w-3 h-3 text-emerald-400" />
-                  <span>Copied =A2&amp;&apos;-1&apos;</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3 h-3" />
-                  <span>=A2&amp;&apos;-1&apos;</span>
-                </>
-              )}
-            </button>
-          </div>
-
-          <form onSubmit={handleBulkImport} className="space-y-2">
-            <textarea
-              rows={3}
-              value={csvText}
-              onChange={(e) => setCsvText(e.target.value)}
-              placeholder={`game_name,rank,level,amount_paid\nMemberName,Soldier,55,4000000`}
-              className="w-full rounded-xl bg-cartel-bg border border-cartel-border p-2.5 text-xs font-mono text-slate-200 placeholder-slate-500"
-            />
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                className="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-1.5 text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Import CSV Rows</span>
-              </button>
-            </div>
-          </form>
-
-          {importStatus && (
-            <div className="rounded-lg bg-emerald-500/15 border border-emerald-500/40 px-3 py-1.5 text-xs text-emerald-300">
-              {importStatus}
-            </div>
-          )}
-        </section>
-      )}
     </div>
   );
 }

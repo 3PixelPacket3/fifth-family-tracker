@@ -10,19 +10,56 @@ export type MemberRank =
   | "Capo"
   | "Soldier"
   | "Associate";
+export type ConfigurableRank = "Underboss" | "Capo" | "Soldier" | "Associate";
 export type AppRole = "Admin" | "User";
 export type ApprovalStatus = "pending" | "approved" | "rejected";
 export type ContributionStatus = "Pending" | "Complete";
 
+export interface RankPermissionSet {
+  manageMembers: boolean; // Add / Edit / Remove Members, change ranks, and log payments
+  manageRolloverTreasury: boolean; // Week Rollover & Treasury: Advance active week & adjust Cartel Treasury
+  manageTaxBrackets: boolean; // Level Tax Brackets: Set or update automatic level-to-tax brackets
+  manageIndividualTax: boolean; // Set Tax Rate for Individual Member
+}
+
+export type RankPermissionsMap = Record<ConfigurableRank, RankPermissionSet>;
+
+export const DEFAULT_RANK_PERMISSIONS: RankPermissionsMap = {
+  Underboss: {
+    manageMembers: true,
+    manageRolloverTreasury: false,
+    manageTaxBrackets: false,
+    manageIndividualTax: true,
+  },
+  Capo: {
+    manageMembers: false,
+    manageRolloverTreasury: false,
+    manageTaxBrackets: false,
+    manageIndividualTax: false,
+  },
+  Soldier: {
+    manageMembers: false,
+    manageRolloverTreasury: false,
+    manageTaxBrackets: false,
+    manageIndividualTax: false,
+  },
+  Associate: {
+    manageMembers: false,
+    manageRolloverTreasury: false,
+    manageTaxBrackets: false,
+    manageIndividualTax: false,
+  },
+};
+
 export interface Profile {
   id: string;
-  uid?: string; // Firebase Auth UID if signed up online
+  uid?: string;
   email?: string;
   game_name: string;
   rank: MemberRank;
   level: number;
-  custom_tax_override?: number | null; // Optional per-member custom tax set by App Developer or Don
-  linked_member_id?: string | null; // If an online account is assigned/merged to a created roster member
+  custom_tax_override?: number | null;
+  linked_member_id?: string | null;
   role: AppRole;
   approval_status: ApprovalStatus;
   is_exempt?: boolean;
@@ -45,7 +82,6 @@ export interface WeeklyContribution {
   updated_at: string;
 }
 
-// Default Tax Logic Table (Level -> Expected Tax)
 export const DEFAULT_TAX_LOGIC: TaxBracket[] = [
   { min_level: 1, expected_tax: 0, bracket_label: "Lv 1–39 ($0)" },
   { min_level: 40, expected_tax: 2_000_000, bracket_label: "Lv 40+ ($2M)" },
@@ -62,6 +98,33 @@ export function getCurrentSundayISO(): string {
   const diff = now.getDate() - day;
   const sunday = new Date(now.setDate(diff));
   return sunday.toISOString().slice(0, 10);
+}
+
+// Helper to resolve effective permissions for any member based on their rank
+export function getEffectivePermissions(
+  rank: MemberRank,
+  isMasterAdmin: boolean,
+  rankPermissions: RankPermissionsMap
+): RankPermissionSet & { isFullCommand: boolean } {
+  if (isMasterAdmin || rank === "App Developer" || rank === "Don") {
+    return {
+      isFullCommand: true,
+      manageMembers: true,
+      manageRolloverTreasury: true,
+      manageTaxBrackets: true,
+      manageIndividualTax: true,
+    };
+  }
+  const perms = rankPermissions[rank as ConfigurableRank] || {
+    manageMembers: false,
+    manageRolloverTreasury: false,
+    manageTaxBrackets: false,
+    manageIndividualTax: false,
+  };
+  return {
+    isFullCommand: false,
+    ...perms,
+  };
 }
 
 export function calculateMemberExpectedTax(
@@ -113,6 +176,7 @@ interface CartelState {
   activeWeekStart: string;
   baseTreasury: number;
   welcomeHtml: string;
+  rankPermissions: RankPermissionsMap;
 
   setCloudState: (partial: Partial<CartelState>) => void;
   upsertProfileLocal: (profile: Profile) => void;
@@ -120,6 +184,7 @@ interface CartelState {
   setActiveWeekStart: (weekStart: string) => void;
   setBaseTreasury: (amount: number) => void;
   setWelcomeHtml: (html: string) => void;
+  setRankPermissionsLocal: (perms: RankPermissionsMap) => void;
   logPaymentLocal: (
     playerId: string,
     amount: number,
@@ -147,6 +212,7 @@ export const useCartelStore = create<CartelState>()(
       activeWeekStart: getCurrentSundayISO(),
       baseTreasury: 0,
       welcomeHtml: DEFAULT_WELCOME_HTML,
+      rankPermissions: DEFAULT_RANK_PERMISSIONS,
 
       setCloudState: (partial) => set((state) => ({ ...state, ...partial })),
 
@@ -173,6 +239,8 @@ export const useCartelStore = create<CartelState>()(
       setBaseTreasury: (amount) => set({ baseTreasury: Math.max(0, amount) }),
 
       setWelcomeHtml: (html) => set({ welcomeHtml: html }),
+
+      setRankPermissionsLocal: (perms) => set({ rankPermissions: perms }),
 
       logPaymentLocal: (playerId, amount, note, mode = "add") => {
         const state = get();

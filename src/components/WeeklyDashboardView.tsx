@@ -7,6 +7,7 @@ import {
   formatCartelCurrency,
   MemberRank,
   Profile,
+  RankPermissionSet,
 } from "@/store/useCartelStore";
 import {
   saveProfileToCloud,
@@ -31,7 +32,7 @@ import {
 
 interface RosterTaxManagerProps {
   currentUserProfile: Profile;
-  isAdminOrDon: boolean;
+  permissions: RankPermissionSet & { isFullCommand: boolean };
 }
 
 const RANKS: MemberRank[] = [
@@ -53,7 +54,7 @@ const RANK_STYLE: Record<MemberRank, string> = {
 
 export default function WeeklyDashboardView({
   currentUserProfile,
-  isAdminOrDon,
+  permissions,
 }: RosterTaxManagerProps) {
   const {
     profiles,
@@ -65,19 +66,23 @@ export default function WeeklyDashboardView({
     toggleMemberPaidLocal,
   } = useCartelStore();
 
-  // Add Member Form state (App Developer & Don only)
+  const canManageMembers = permissions.manageMembers;
+  const canManageIndividualTax = permissions.manageIndividualTax;
+  const canEditRow = canManageMembers || canManageIndividualTax;
+
+  // Add Member Form state
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newRank, setNewRank] = useState<MemberRank>("Soldier");
   const [newLevel, setNewLevel] = useState("50");
   const [newCustomTax, setNewCustomTax] = useState("");
 
-  // Selected Member for Logging Payment (App Developer & Don only)
+  // Selected Member for Logging Payment
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [payAmountInput, setPayAmountInput] = useState("");
   const [payNoteInput, setPayNoteInput] = useState("");
 
-  // Edit Member Drawer state (App Developer & Don only)
+  // Edit Member Drawer state
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [editRank, setEditRank] = useState<MemberRank>("Soldier");
   const [editLevel, setEditLevel] = useState("50");
@@ -87,12 +92,10 @@ export default function WeeklyDashboardView({
   const [page, setPage] = useState(0);
   const PER_PAGE = 5;
 
-  // Show all approved family members (excluding the App Developer system account from the tax obligation list unless desired)
   const approvedMembers = profiles.filter(
     (p) => p.approval_status === "approved" && p.rank !== "App Developer"
   );
 
-  // Resolve the logged-in member's assigned roster profile (either direct ID or linked_member_id)
   const myAssignedProfile =
     approvedMembers.find(
       (m) =>
@@ -114,10 +117,10 @@ export default function WeeklyDashboardView({
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isAdminOrDon || !newName.trim()) return;
+    if (!canManageMembers || !newName.trim()) return;
     const lvl = Math.max(1, parseInt(newLevel, 10) || 1);
     const customTaxVal =
-      newCustomTax.trim() !== ""
+      canManageIndividualTax && newCustomTax.trim() !== ""
         ? Math.max(0, parseFloat(newCustomTax) || 0)
         : null;
 
@@ -140,14 +143,14 @@ export default function WeeklyDashboardView({
 
   const handleLogPayment = async (e: React.FormEvent, playerId: string) => {
     e.preventDefault();
-    if (!isAdminOrDon) return;
+    if (!canManageMembers) return;
     const amount = parseFloat(payAmountInput.replace(/[^0-9.]/g, ""));
     if (Number.isNaN(amount) || amount < 0) return;
 
     const saved = logPaymentLocal(
       playerId,
       amount,
-      payNoteInput.trim() || "Logged by Admin/Don",
+      payNoteInput.trim() || `Logged by ${currentUserProfile.rank}`,
       "add"
     );
     if (saved) {
@@ -162,7 +165,7 @@ export default function WeeklyDashboardView({
   };
 
   const handleQuickTogglePaid = async (playerId: string) => {
-    if (!isAdminOrDon) return;
+    if (!canManageMembers) return;
     const saved = toggleMemberPaidLocal(playerId);
     if (saved) {
       await saveContributionToCloud(saved);
@@ -184,19 +187,23 @@ export default function WeeklyDashboardView({
   };
 
   const handleSaveMemberEdit = async (member: Profile) => {
-    if (!isAdminOrDon) return;
-    const lvl = Math.max(1, parseInt(editLevel, 10) || 1);
-    const customTaxVal =
-      editCustomTax.trim() !== ""
+    if (!canEditRow) return;
+    const lvl = canManageMembers
+      ? Math.max(1, parseInt(editLevel, 10) || 1)
+      : member.level;
+    const nextRank = canManageMembers ? editRank : member.rank;
+    const customTaxVal = canManageIndividualTax
+      ? editCustomTax.trim() !== ""
         ? Math.max(0, parseFloat(editCustomTax) || 0)
-        : null;
+        : null
+      : member.custom_tax_override;
 
     const updated: Profile = {
       ...member,
-      rank: editRank,
+      rank: nextRank,
       level: lvl,
       custom_tax_override: customTaxVal,
-      role: editRank === "Don" ? "Admin" : "User",
+      role: nextRank === "Don" ? "Admin" : "User",
     };
 
     await saveProfileToCloud(updated);
@@ -204,7 +211,7 @@ export default function WeeklyDashboardView({
   };
 
   const handleRemoveMember = async (memberId: string) => {
-    if (!isAdminOrDon) return;
+    if (!canManageMembers) return;
     await deleteProfileFromCloud(memberId);
     if (editingMemberId === memberId) setEditingMemberId(null);
   };
@@ -226,7 +233,7 @@ export default function WeeklyDashboardView({
 
   return (
     <div className="w-full space-y-4">
-      {/* Custom Welcome Message Banner (Editable only by App Developer in Admin tab) */}
+      {/* Custom Welcome Message Banner */}
       {welcomeHtml && (
         <section
           aria-label="Family Welcome Message"
@@ -235,8 +242,8 @@ export default function WeeklyDashboardView({
         />
       )}
 
-      {/* Standard Member Personal Status Card (When logged in as a View-Only Member) */}
-      {!isAdminOrDon && myAssignedProfile && (
+      {/* Standard Member Personal Status Card */}
+      {!canEditRow && myAssignedProfile && (
         <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-amber-500/40 bg-cartel-card p-4 shadow-xl">
           <div className="flex items-center justify-between border-b border-cartel-border pb-2.5">
             <div className="flex items-center gap-2">
@@ -315,7 +322,7 @@ export default function WeeklyDashboardView({
         </section>
       )}
 
-      {/* Main Family Roster & Weekly Tax Card (Full control for App Developer & Don; View-Only for Members) */}
+      {/* Main Family Roster & Weekly Tax Card */}
       <section className="w-full max-h-[564px] overflow-hidden rounded-2xl border border-cartel-border bg-cartel-card p-4 shadow-xl flex flex-col justify-between space-y-3">
         <div>
           <div className="flex items-center justify-between gap-2 border-b border-cartel-border pb-3">
@@ -324,7 +331,7 @@ export default function WeeklyDashboardView({
                 <h2 className="text-sm font-extrabold text-white uppercase tracking-wider">
                   Family Roster &amp; Weekly Tax
                 </h2>
-                {!isAdminOrDon && (
+                {!canEditRow && (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-cartel-border">
                     View Only
                   </span>
@@ -341,7 +348,7 @@ export default function WeeklyDashboardView({
               </p>
             </div>
 
-            {isAdminOrDon && (
+            {canManageMembers && (
               <button
                 type="button"
                 onClick={() => setShowAddForm((v) => !v)}
@@ -353,8 +360,8 @@ export default function WeeklyDashboardView({
             )}
           </div>
 
-          {/* Inline Add Member Form (App Developer / Don Only) */}
-          {showAddForm && isAdminOrDon && (
+          {/* Inline Add Member Form */}
+          {showAddForm && canManageMembers && (
             <form
               onSubmit={handleAddMember}
               className="mt-3 rounded-xl bg-cartel-surface border border-amber-500/40 p-3 space-y-2.5"
@@ -390,15 +397,17 @@ export default function WeeklyDashboardView({
                   placeholder="Level"
                   className="rounded-lg bg-cartel-bg border border-cartel-border px-2.5 py-1.5 text-xs text-white"
                 />
-                <input
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={newCustomTax}
-                  onChange={(e) => setNewCustomTax(e.target.value)}
-                  placeholder="Custom Tax $ (Optional)"
-                  className="col-span-2 sm:col-span-1 rounded-lg bg-cartel-bg border border-cartel-border px-2.5 py-1.5 text-xs text-amber-300"
-                />
+                {canManageIndividualTax && (
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={newCustomTax}
+                    onChange={(e) => setNewCustomTax(e.target.value)}
+                    placeholder="Custom Tax $ (Optional)"
+                    className="col-span-2 sm:col-span-1 rounded-lg bg-cartel-bg border border-cartel-border px-2.5 py-1.5 text-xs text-amber-300"
+                  />
+                )}
               </div>
               <div className="flex justify-end">
                 <button
@@ -434,7 +443,7 @@ export default function WeeklyDashboardView({
                 No Family Members on the Roster Yet
               </p>
               <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                {isAdminOrDon
+                {canManageMembers
                   ? "Use the Add Member button above to create your family roster, set each member's rank and tax rate, and log weekly payments."
                   : "The App Developer or Family Don has not published the roster yet."}
               </p>
@@ -503,44 +512,48 @@ export default function WeeklyDashboardView({
                         </div>
                       </div>
 
-                      {/* Controls for App Developer & Don vs Read-Only Badge for Members */}
-                      {isAdminOrDon ? (
+                      {/* Controls based on rank permissions */}
+                      {canEditRow ? (
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSelectedMemberId(
-                                isSelectedForPay ? null : member.id
-                              )
-                            }
-                            className="px-2.5 py-1.5 rounded-xl bg-cartel-surface hover:bg-slate-800 border border-cartel-border text-xs font-semibold text-amber-300 flex items-center gap-1 cursor-pointer"
-                            title="Log payment amount"
-                          >
-                            <DollarSign className="w-3.5 h-3.5" />
-                            <span>Log Pay</span>
-                          </button>
+                          {canManageMembers && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedMemberId(
+                                    isSelectedForPay ? null : member.id
+                                  )
+                                }
+                                className="px-2.5 py-1.5 rounded-xl bg-cartel-surface hover:bg-slate-800 border border-cartel-border text-xs font-semibold text-amber-300 flex items-center gap-1 cursor-pointer"
+                                title="Log payment amount"
+                              >
+                                <DollarSign className="w-3.5 h-3.5" />
+                                <span>Log Pay</span>
+                              </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleQuickTogglePaid(member.id)}
-                            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 cursor-pointer ${
-                              isPaid
-                                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
-                                : "bg-rose-500/15 text-rose-300 border-rose-500/40"
-                            }`}
-                          >
-                            {isPaid ? (
-                              <>
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>Paid</span>
-                              </>
-                            ) : (
-                              <>
-                                <Clock className="w-3.5 h-3.5" />
-                                <span>Pending</span>
-                              </>
-                            )}
-                          </button>
+                              <button
+                                type="button"
+                                onClick={() => handleQuickTogglePaid(member.id)}
+                                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 cursor-pointer ${
+                                  isPaid
+                                    ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+                                    : "bg-rose-500/15 text-rose-300 border-rose-500/40"
+                                }`}
+                              >
+                                {isPaid ? (
+                                  <>
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>Paid</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>Pending</span>
+                                  </>
+                                )}
+                              </button>
+                            </>
+                          )}
 
                           <button
                             type="button"
@@ -550,7 +563,7 @@ export default function WeeklyDashboardView({
                                 : startEditingMember(member)
                             }
                             className="p-1.5 rounded-xl bg-cartel-surface hover:bg-slate-800 border border-cartel-border text-slate-300 cursor-pointer"
-                            title="Set Member Rank, Level, Individual Tax Rate, or Remove"
+                            title="Edit Member Settings"
                           >
                             <Sliders className="w-3.5 h-3.5" />
                           </button>
@@ -578,8 +591,8 @@ export default function WeeklyDashboardView({
                       )}
                     </div>
 
-                    {/* Inline Log Payment Drawer (App Developer & Don Only) */}
-                    {isSelectedForPay && isAdminOrDon && (
+                    {/* Inline Log Payment Drawer */}
+                    {isSelectedForPay && canManageMembers && (
                       <form
                         onSubmit={(e) => handleLogPayment(e, member.id)}
                         className="flex flex-wrap items-center gap-1.5 bg-cartel-surface/90 border border-amber-500/30 rounded-xl p-2"
@@ -591,7 +604,7 @@ export default function WeeklyDashboardView({
                           required
                           value={payAmountInput}
                           onChange={(e) => setPayAmountInput(e.target.value)}
-                          placeholder={`Amount paid ($)`}
+                          placeholder="Amount paid ($)"
                           className="flex-1 min-w-[130px] rounded-lg bg-cartel-bg border border-cartel-border px-2.5 py-1 text-xs text-white"
                         />
                         <input
@@ -610,41 +623,47 @@ export default function WeeklyDashboardView({
                       </form>
                     )}
 
-                    {/* Inline Edit Member: Rank, Level, Individual Tax Rate, or Delete */}
-                    {isEditing && isAdminOrDon && (
+                    {/* Inline Edit Member Drawer */}
+                    {isEditing && canEditRow && (
                       <div className="flex flex-wrap items-center justify-between gap-2 bg-cartel-surface/90 border border-cartel-border rounded-xl p-2.5 text-xs">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <select
-                            value={editRank}
-                            onChange={(e) =>
-                              setEditRank(e.target.value as MemberRank)
-                            }
-                            className="rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-white"
-                          >
-                            {RANKS.map((r) => (
-                              <option key={r} value={r}>
-                                {r}
-                              </option>
-                            ))}
-                          </select>
-                          <input
-                            type="number"
-                            min={1}
-                            value={editLevel}
-                            onChange={(e) => setEditLevel(e.target.value)}
-                            className="w-16 rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-white"
-                            title="Member Level"
-                          />
-                          <input
-                            type="number"
-                            min={0}
-                            step="any"
-                            value={editCustomTax}
-                            onChange={(e) => setEditCustomTax(e.target.value)}
-                            placeholder="Custom Tax ($)"
-                            className="w-32 rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-amber-300"
-                            title="Set exact tax amount for this member (or leave blank for Level Bracket)"
-                          />
+                          {canManageMembers && (
+                            <>
+                              <select
+                                value={editRank}
+                                onChange={(e) =>
+                                  setEditRank(e.target.value as MemberRank)
+                                }
+                                className="rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-white"
+                              >
+                                {RANKS.map((r) => (
+                                  <option key={r} value={r}>
+                                    {r}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                type="number"
+                                min={1}
+                                value={editLevel}
+                                onChange={(e) => setEditLevel(e.target.value)}
+                                className="w-16 rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-white"
+                                title="Member Level"
+                              />
+                            </>
+                          )}
+                          {canManageIndividualTax && (
+                            <input
+                              type="number"
+                              min={0}
+                              step="any"
+                              value={editCustomTax}
+                              onChange={(e) => setEditCustomTax(e.target.value)}
+                              placeholder="Custom Tax ($)"
+                              className="w-32 rounded-lg bg-cartel-bg border border-cartel-border px-2 py-1 text-xs text-amber-300"
+                              title="Set exact tax amount for this member (or leave blank for Level Bracket)"
+                            />
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5">
                           <button
@@ -654,14 +673,16 @@ export default function WeeklyDashboardView({
                           >
                             Save
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveMember(member.id)}
-                            className="p-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 cursor-pointer"
-                            title="Remove member from family"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {canManageMembers && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMember(member.id)}
+                              className="p-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 cursor-pointer"
+                              title="Remove member from family"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
